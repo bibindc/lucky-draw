@@ -1,0 +1,51 @@
+# Render Blueprint for free hosting (specs/02-design.md §Deployment, docs/DEPLOYMENT.md).
+# Values marked `sync: false` are secrets or addresses you enter in Render when you create the Blueprint.
+services:
+  # API + admin app on one origin, so the SameSite=Strict session cookie works.
+  - type: web
+    name: lucky-draw-admin
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci --include=dev && npm run render:build
+    startCommand: npm run start --workspace backend
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # Neon *direct* connection string (host without "-pooler"), with &connect_timeout=15 appended.
+      - key: DATABASE_URL
+        sync: false
+      # The same direct connection string; used to apply migrations.
+      - key: DIRECT_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      # The super admin account, created or updated on every deploy.
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      # The admin app calls the API on its own origin.
+      - key: VITE_API_BASE_URL
+        value: /api/v1
+      # The public website's address, for the "Open public website" link (e.g. https://lucky-draw-site.onrender.com).
+      - key: VITE_SITE_URL
+        sync: false
+
+  # The public showcase website (07-public-website.md): static files on Render's CDN.
+  - type: web
+    name: lucky-draw-site
+    runtime: static
+    buildCommand: npm ci --include=dev && npm run build --workspace site
+    staticPublishPath: site/dist
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # The admin service's API, e.g. https://lucky-draw-admin.onrender.com/api/v1
+      - key: VITE_API_BASE_URL
+        sync: false

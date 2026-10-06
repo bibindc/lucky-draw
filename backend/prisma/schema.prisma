@@ -1,0 +1,325 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Admin {
+  id                     String                @id @default(uuid())
+  email                  String                @unique
+  passwordHash           String
+  name                   String
+  role                   String                @default("SUPER_ADMIN")
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  executedDraws          Draw[]                @relation("DrawExecutedBy")
+  recordedPayments       PaymentTransaction[]  @relation("PaymentRecordedBy")
+  recordedWinners        Winner[]              @relation("WinnerRecordedBy")
+  complimentaryChosen    ComplimentaryChoice[] @relation("ComplimentaryChosenByAdmin")
+  complimentaryDelivered ComplimentaryChoice[] @relation("ComplimentaryDeliveredByAdmin")
+  decidedRequests        ApprovalRequest[]     @relation("ApprovalDecidedBy")
+}
+
+model Agent {
+  id                     String                @id @default(uuid())
+  agentCode              String                @unique
+  email                  String                @unique
+  mobile                 String                @unique
+  passwordHash           String
+  name                   String
+  isActive               Boolean               @default(true)
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  participants           Participant[]
+  complimentaryChosen    ComplimentaryChoice[] @relation("ComplimentaryChosenByAgent")
+  complimentaryDelivered ComplimentaryChoice[] @relation("ComplimentaryDeliveredByAgent")
+  approvalRequests       ApprovalRequest[]
+  collectedPayments      PaymentTransaction[]  @relation("PaymentCollectedBy")
+}
+
+model SequenceCounter {
+  name      String @id
+  nextValue Int
+}
+
+model Campaign {
+  id                   String                @id @default(uuid())
+  name                 String
+  durationMonths       Int
+  drawCount            Int
+  totalAmountPaise     Int
+  perDrawAmountPaise   Int
+  status               String                @default("ACTIVE")
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  draws                Draw[]
+  participants         Participant[]
+  prizes               Prize[]
+  complimentaryOptions ComplimentaryOption[]
+  approvalRequests     ApprovalRequest[]
+  featuredOnSite       SiteSettings[]
+}
+
+model Draw {
+  id                String            @id @default(uuid())
+  campaignId        String
+  drawNumber        Int
+  scheduledAt       DateTime
+  prizeCount        Int
+  status            String            @default("SCHEDULED")
+  executionMode     String?
+  totalRounds       Int?
+  roundsCompleted   Int               @default(0)
+  startedAt         DateTime?
+  heldAt            DateTime?
+  executedAt        DateTime?
+  executedByAdminId String?
+  poolSnapshot      Json?
+  campaign          Campaign          @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  executedByAdmin   Admin?            @relation("DrawExecutedBy", fields: [executedByAdminId], references: [id], onDelete: SetNull)
+  drawPayments      DrawPayment[]
+  prizes            Prize[]
+  winners           Winner[]
+  manualRecord      ManualDrawRecord?
+
+  @@unique([campaignId, drawNumber])
+  @@index([campaignId, scheduledAt])
+  @@index([status, scheduledAt])
+}
+
+model Participant {
+  id                  String               @id @default(uuid())
+  participantNumber   Int                  @unique @default(1000)
+  campaignId          String
+  agentId             String?
+  name                String
+  email               String?
+  mobile              String?
+  externalUserId      String?
+  address             String?
+  status              String               @default("REGISTERED")
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  campaign            Campaign             @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  agent               Agent?               @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  drawPayments        DrawPayment[]
+  paymentTransactions PaymentTransaction[]
+  winners             Winner[]
+  complimentaryChoice ComplimentaryChoice?
+  approvalRequests    ApprovalRequest[]
+
+  @@unique([campaignId, email])
+  @@unique([campaignId, mobile])
+  @@unique([campaignId, externalUserId])
+  @@index([campaignId, status])
+  @@index([campaignId, name])
+  @@index([agentId, createdAt])
+}
+
+model DrawPayment {
+  id                 String              @id @default(uuid())
+  participantId      String
+  drawId             String
+  status             String              @default("NOT_PAID")
+  retainedCredit     Boolean             @default(false)
+  transactionId      String?
+  participant        Participant         @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  draw               Draw                @relation(fields: [drawId], references: [id], onDelete: Restrict)
+  currentTransaction PaymentTransaction? @relation("CurrentPaymentTransaction", fields: [transactionId], references: [id], onDelete: SetNull)
+  allocations        PaymentAllocation[]
+
+  @@unique([participantId, drawId])
+  @@index([drawId, status])
+}
+
+model PaymentTransaction {
+  id                  String              @id @default(uuid())
+  participantId       String
+  amountPaise         Int
+  method              String
+  reference           String?
+  status              String              @default("RECORDED")
+  recordedByAdminId   String
+  collectedByAgentId  String?
+  createdAt           DateTime            @default(now())
+  voidedAt            DateTime?
+  participant         Participant         @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  recordedByAdmin     Admin               @relation("PaymentRecordedBy", fields: [recordedByAdminId], references: [id], onDelete: Restrict)
+  collectedByAgent    Agent?              @relation("PaymentCollectedBy", fields: [collectedByAgentId], references: [id], onDelete: SetNull)
+  currentDrawPayments DrawPayment[]       @relation("CurrentPaymentTransaction")
+  allocations         PaymentAllocation[]
+
+  @@index([participantId, createdAt])
+}
+
+model PaymentAllocation {
+  id            String             @id @default(uuid())
+  transactionId String
+  drawPaymentId String
+  transaction   PaymentTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  drawPayment   DrawPayment        @relation(fields: [drawPaymentId], references: [id], onDelete: Restrict)
+
+  @@unique([transactionId, drawPaymentId])
+  @@index([drawPaymentId])
+}
+
+model Prize {
+  id               String      @id @default(uuid())
+  campaignId       String
+  drawId           String?
+  name             String
+  description      String?
+  valuePaise       Int?
+  rank             Int
+  totalQuantity    Int
+  assignedQuantity Int         @default(0)
+  imageUpdatedAt   DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  campaign         Campaign    @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  draw             Draw?       @relation(fields: [drawId], references: [id], onDelete: Restrict)
+  winners          Winner[]
+  image            PrizeImage?
+
+  @@index([campaignId, rank])
+  @@index([drawId, rank])
+}
+
+model Winner {
+  id                String            @id @default(uuid())
+  drawId            String
+  participantId     String            @unique
+  prizeId           String
+  drawPosition      Int               @default(1)
+  drawnAt           DateTime          @default(now())
+  recordedByAdminId String?
+  poolSnapshot      Json?
+  claimStatus       String            @default("PENDING")
+  claimNote         String?
+  claimUpdatedAt    DateTime?
+  createdAt         DateTime          @default(now())
+  draw              Draw              @relation(fields: [drawId], references: [id], onDelete: Restrict)
+  participant       Participant       @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  prize             Prize             @relation(fields: [prizeId], references: [id], onDelete: Restrict)
+  recordedByAdmin   Admin?            @relation("WinnerRecordedBy", fields: [recordedByAdminId], references: [id], onDelete: SetNull)
+  approvalRequests  ApprovalRequest[]
+
+  @@index([drawId, createdAt])
+}
+
+model ManualDrawRecord {
+  id                String   @id @default(uuid())
+  drawId            String   @unique
+  conductedBy       String
+  drawMethod        String
+  venue             String?
+  witnesses         String?
+  notes             String?
+  evidenceReference String?
+  createdAt         DateTime @default(now())
+  draw              Draw     @relation(fields: [drawId], references: [id], onDelete: Restrict)
+}
+
+model ComplimentaryOption {
+  id             String                    @id @default(uuid())
+  campaignId     String
+  name           String
+  description    String?
+  valuePaise     Int?
+  isActive       Boolean                   @default(true)
+  imageUpdatedAt DateTime?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  campaign       Campaign                  @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  choices        ComplimentaryChoice[]
+  image          ComplimentaryOptionImage?
+
+  @@index([campaignId, isActive])
+}
+
+model ComplimentaryChoice {
+  id                 String              @id @default(uuid())
+  participantId      String              @unique
+  optionId           String
+  status             String              @default("CHOSEN")
+  chosenAt           DateTime            @default(now())
+  chosenByAdminId    String?
+  chosenByAgentId    String?
+  deliveredAt        DateTime?
+  deliveryNote       String?
+  deliveredByAdminId String?
+  deliveredByAgentId String?
+  cancelledAt        DateTime?
+  cancelReason       String?
+  participant        Participant         @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  option             ComplimentaryOption @relation(fields: [optionId], references: [id], onDelete: Restrict)
+  chosenByAdmin      Admin?              @relation("ComplimentaryChosenByAdmin", fields: [chosenByAdminId], references: [id], onDelete: SetNull)
+  chosenByAgent      Agent?              @relation("ComplimentaryChosenByAgent", fields: [chosenByAgentId], references: [id], onDelete: SetNull)
+  deliveredByAdmin   Admin?              @relation("ComplimentaryDeliveredByAdmin", fields: [deliveredByAdminId], references: [id], onDelete: SetNull)
+  deliveredByAgent   Agent?              @relation("ComplimentaryDeliveredByAgent", fields: [deliveredByAgentId], references: [id], onDelete: SetNull)
+
+  @@index([optionId, status])
+}
+
+model ApprovalRequest {
+  id               String       @id @default(uuid())
+  type             String
+  status           String       @default("PENDING")
+  campaignId       String
+  participantId    String?
+  winnerId         String?
+  agentId          String
+  payload          Json
+  originalPayload  Json?
+  pendingKey       String?      @unique
+  submittedAt      DateTime     @default(now())
+  decidedAt        DateTime?
+  decidedByAdminId String?
+  rejectionReason  String?
+  campaign         Campaign     @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  participant      Participant? @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  winner           Winner?      @relation(fields: [winnerId], references: [id], onDelete: Restrict)
+  agent            Agent        @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  decidedByAdmin   Admin?       @relation("ApprovalDecidedBy", fields: [decidedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status, submittedAt])
+  @@index([agentId, status])
+  @@index([participantId, status])
+}
+
+model PrizeImage {
+  id        String   @id @default(uuid())
+  prizeId   String   @unique
+  mimeType  String
+  data      Bytes
+  size      Int
+  updatedAt DateTime @updatedAt
+  prize     Prize    @relation(fields: [prizeId], references: [id], onDelete: Cascade)
+}
+
+model ComplimentaryOptionImage {
+  id        String              @id @default(uuid())
+  optionId  String              @unique
+  mimeType  String
+  data      Bytes
+  size      Int
+  updatedAt DateTime            @updatedAt
+  option    ComplimentaryOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+}
+
+/// Public website settings (07-public-website.md): a single row with id 1.
+model SiteSettings {
+  id                 Int       @id @default(1)
+  featuredCampaignId String?
+  organizerName      String?
+  contactPhone       String?
+  whatsappNumber     String?
+  contactEmail       String?
+  joinNote           String?
+  updatedByAdminId   String?
+  updatedAt          DateTime  @updatedAt
+  featuredCampaign   Campaign? @relation(fields: [featuredCampaignId], references: [id], onDelete: SetNull)
+}

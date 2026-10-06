@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.env
+*.log
+.DS_Store
+coverage/
+*.db
+*.sqlite
+
+# Local database backups hold real participant data: never commit them.
+*.bak
+*.db-journal
+*.tsbuildinfo
+backend/prisma/postgres/.next.prisma

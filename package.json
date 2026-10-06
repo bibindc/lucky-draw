@@ -1,0 +1,29 @@
+{
+  "name": "lucky-draw",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "backend",
+    "frontend",
+    "site"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web,site -c green,cyan,yellow \"npm:dev --workspace backend\" \"npm:dev --workspace frontend\" \"npm:dev --workspace site\"",
+    "build": "npm run build --workspaces",
+    "test": "npm test --workspaces",
+    "lint": "eslint backend/src backend/tests frontend/src site/src",
+    "format": "prettier --write \"{backend,frontend,site}/**/*.{ts,tsx,json,css}\"",
+    "render:build": "npm run postgres:check --workspace backend && prisma generate --schema backend/prisma/postgres/schema.prisma && prisma migrate deploy --schema backend/prisma/postgres/schema.prisma && npm run prisma:seed --workspace backend && npm run build --workspace backend && npm run build --workspace frontend"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.35.0",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.2",
+    "typescript-eslint": "^8.44.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
