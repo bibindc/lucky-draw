@@ -40,6 +40,29 @@ describe('campaign management screen', () => {
     expect(screen.getAllByLabelText('Date and time')).toHaveLength(10);
   });
 
+  it('spreads the draw schedule evenly across the duration from the first draw (AC-CAM-9)', async () => {
+    vi.mocked(listCampaigns).mockResolvedValue([]);
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Create campaign' }));
+
+    const dates = () => screen.getAllByLabelText('Date and time').map((input) => (input as HTMLInputElement).value);
+    await user.clear(screen.getByLabelText('First draw'));
+    await user.type(screen.getByLabelText('First draw'), '2027-01-15T18:30');
+    await user.clear(screen.getByLabelText('Number of draws'));
+    await user.type(screen.getByLabelText('Number of draws'), '5');
+
+    expect(dates()).toEqual(['2027-01-15T18:30', '2027-02-15T18:30', '2027-03-15T18:30', '2027-04-15T18:30', '2027-05-15T18:30']);
+
+    await user.clear(screen.getAllByLabelText('Prizes')[1]);
+    await user.type(screen.getAllByLabelText('Prizes')[1], '8');
+    await user.clear(screen.getByLabelText('Duration (months)'));
+    await user.type(screen.getByLabelText('Duration (months)'), '10');
+
+    expect(dates()).toEqual(['2027-01-15T18:30', '2027-03-15T18:30', '2027-05-15T18:30', '2027-07-15T18:30', '2027-09-15T18:30']);
+    expect(screen.getAllByLabelText('Prizes')[1]).toHaveValue(8);
+  });
+
   it('edits a scheduled draw date and prize count', async () => {
     const draw = {
       id: 'draw-id',

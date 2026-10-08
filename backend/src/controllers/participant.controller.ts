@@ -93,6 +93,9 @@ async function buildParticipantListFilter(request: Request, response: Response):
     requestedAgentId = parsedAgentId.data;
   }
 
+  // AC-PAR-28: a search of digits that fits the serial range also matches that serial number exactly.
+  const serial = /^\d{1,9}$/.test(search) ? Number(search) : null;
+
   return {
     campaignId,
     ...(requestedAgentId ? { agentId: requestedAgentId } : {}),
@@ -100,6 +103,7 @@ async function buildParticipantListFilter(request: Request, response: Response):
     ...(search
       ? {
           OR: [
+            ...(serial !== null ? [{ participantNumber: serial }] : []),
             { name: containsText(search) },
             { email: containsText(search) },
             { mobile: containsText(search) },
@@ -110,7 +114,22 @@ async function buildParticipantListFilter(request: Request, response: Response):
   };
 }
 
+const listSortSchema = z.enum(['newest', 'serial', 'name']).default('newest');
+const listOrderSchema = z.enum(['asc', 'desc']).default('asc');
+
+// AC-PAR-29: newest first by default; serial or name in either direction, with serial breaking name ties.
+function listOrderBy(sort: z.infer<typeof listSortSchema>, order: z.infer<typeof listOrderSchema>): Prisma.ParticipantOrderByWithRelationInput[] {
+  if (sort === 'serial') return [{ participantNumber: order }];
+  if (sort === 'name') return [{ name: order }, { participantNumber: 'asc' }];
+  return [{ createdAt: 'desc' }, { participantNumber: 'desc' }];
+}
+
 export async function listParticipants(request: Request, response: Response) {
+  const sort = listSortSchema.safeParse(request.query.sort);
+  const order = listOrderSchema.safeParse(request.query.order);
+  if (!sort.success || !order.success) {
+    return validationError(response, [{ path: [sort.success ? 'order' : 'sort'], message: 'Sort order is invalid.' }]);
+  }
   const where = await buildParticipantListFilter(request, response);
   if (!where) return;
 
@@ -119,7 +138,7 @@ export async function listParticipants(request: Request, response: Response) {
   const [participants, total] = await prisma.$transaction([
     prisma.participant.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: listOrderBy(sort.data, order.data),
       skip: (page - 1) * pageSize,
       take: pageSize,
       include: {

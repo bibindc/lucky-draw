@@ -127,6 +127,38 @@ describe('participant ownership and serial allocation', () => {
     }));
   });
 
+  it('AC-PAR-28 matches a numeric search against the serial number as well as text fields', async () => {
+    mocks.transaction.mockImplementation((operations: Promise<unknown>[]) => Promise.all(operations));
+    mocks.campaignFindUnique.mockResolvedValue({ id: campaignId });
+
+    await listParticipants(makeRequest('SUPER_ADMIN', undefined, {}, { search: ' 1250 ' }), makeResponse());
+    expect(mocks.participantFindMany.mock.calls[0][0].where.OR).toEqual(expect.arrayContaining([
+      { participantNumber: 1250 }, { mobile: expect.objectContaining({ contains: '1250' }) },
+    ]));
+
+    await listParticipants(makeRequest('SUPER_ADMIN', undefined, {}, { search: 'asha' }), makeResponse());
+    expect(mocks.participantFindMany.mock.calls[1][0].where.OR).not.toContainEqual(expect.objectContaining({ participantNumber: expect.anything() }));
+  });
+
+  it('AC-PAR-29 sorts by newest, serial or name and rejects unknown sorts', async () => {
+    mocks.transaction.mockImplementation((operations: Promise<unknown>[]) => Promise.all(operations));
+    mocks.campaignFindUnique.mockResolvedValue({ id: campaignId });
+    const orderFor = async (query: Record<string, string>) => {
+      mocks.participantFindMany.mockClear();
+      await listParticipants(makeRequest('SUPER_ADMIN', undefined, {}, query), makeResponse());
+      return mocks.participantFindMany.mock.calls[0][0].orderBy;
+    };
+
+    expect(await orderFor({})).toEqual([{ createdAt: 'desc' }, { participantNumber: 'desc' }]);
+    expect(await orderFor({ sort: 'serial' })).toEqual([{ participantNumber: 'asc' }]);
+    expect(await orderFor({ sort: 'serial', order: 'desc' })).toEqual([{ participantNumber: 'desc' }]);
+    expect(await orderFor({ sort: 'name', order: 'desc' })).toEqual([{ name: 'desc' }, { participantNumber: 'asc' }]);
+
+    const invalid = makeResponse();
+    await listParticipants(makeRequest('SUPER_ADMIN', undefined, {}, { sort: 'mobile' }), invalid);
+    expect(invalid.status).toHaveBeenCalledWith(400);
+  });
+
   it('allows profile edits but rejects an out-of-range serial (AC-PAR-23)', async () => {
     const response = makeResponse();
 

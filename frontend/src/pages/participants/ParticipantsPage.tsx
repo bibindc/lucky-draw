@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useState, type FormEvent } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowUpRight, Download, FileSpreadsheet, FileText, Pencil, Plus, Search, UserRoundPlus, UsersRound, X } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, ArrowUpRight, ChevronLeft, ChevronRight, Download, FileSpreadsheet, FileText, Pencil, Plus, Search, UserRoundPlus, UsersRound, X } from 'lucide-react';
 import { listAgents } from '../../api/agents';
 import { listCampaigns } from '../../api/campaigns';
 import {
@@ -15,6 +15,7 @@ import {
   updateParticipant,
   type NewParticipant,
   type Participant,
+  type ParticipantSort,
 } from '../../api/participants';
 import ComplimentaryPanel from '../../components/ComplimentaryPanel';
 import PendingRequestsPanel from '../../components/PendingRequestsPanel';
@@ -45,6 +46,8 @@ function formError(error: unknown): string {
   return 'Participant could not be added.';
 }
 
+const pageSizes = [25, 50, 100] as const;
+
 type ParticipantsPageProps = {
   role: 'SUPER_ADMIN' | 'AGENT';
   agentCode?: string;
@@ -57,6 +60,10 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [agentFilter, setAgentFilter] = useState('');
+  // AC-PAR-29/30: list order and page; any change to filters or order returns to the first page.
+  const [sort, setSort] = useState<{ key: ParticipantSort; order: 'asc' | 'desc' }>({ key: 'newest', order: 'desc' });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(pageSizes[0]);
   const [adding, setAdding] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingProfile, setEditingProfile] = useState(false);
@@ -84,12 +91,42 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
     enabled: role === 'SUPER_ADMIN',
   });
   const deferredSearch = useDeferredValue(search);
-  const listKey = ['participants', campaignId, deferredSearch, status, agentFilter];
+  const listKey = ['participants', campaignId, deferredSearch, status, agentFilter, sort.key, sort.order, page, pageSize];
   const participantQuery = useQuery({
     queryKey: listKey,
-    queryFn: () => listParticipants(campaignId, deferredSearch, status, role === 'SUPER_ADMIN' ? agentFilter : ''),
+    queryFn: () => listParticipants(campaignId, {
+      search: deferredSearch.trim(),
+      status,
+      agentId: role === 'SUPER_ADMIN' ? agentFilter : '',
+      page,
+      pageSize,
+      sort: sort.key,
+      order: sort.key === 'newest' ? undefined : sort.order,
+    }),
     enabled: Boolean(campaignId) && !selectedId,
+    // Keep the current page on screen while the next one loads.
+    placeholderData: keepPreviousData,
   });
+  const pagination = participantQuery.data?.pagination;
+  const pageCount = Math.max(1, pagination?.pageCount ?? 1);
+
+  // A page past the end (e.g. after a filter shrinks the list) falls back to the last page.
+  useEffect(() => {
+    if (pagination && pagination.total > 0 && page > pagination.pageCount) setPage(pagination.pageCount);
+  }, [page, pagination]);
+
+  function toggleSort(key: Exclude<ParticipantSort, 'newest'>) {
+    setSort((current) => current.key === key ? { key, order: current.order === 'asc' ? 'desc' : 'asc' } : { key, order: 'asc' });
+    setPage(1);
+  }
+
+  function sortHeader(key: Exclude<ParticipantSort, 'newest'>, label: string) {
+    const active = sort.key === key;
+    const Icon = !active ? ArrowUpDown : sort.order === 'asc' ? ArrowUp : ArrowDown;
+    return <th aria-sort={active ? (sort.order === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button className={`sort-header${active ? ' active' : ''}`} onClick={() => toggleSort(key)} type="button">{label}<Icon aria-hidden size={11} /></button>
+    </th>;
+  }
   const detailQuery = useQuery({
     queryKey: ['participant', selectedId],
     queryFn: () => getParticipant(selectedId!),
@@ -341,8 +378,8 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
       <div className="campaign-page-heading">
         <div><div className="section-kicker">PEOPLE & ELIGIBILITY</div><h1>Participants</h1><p>Manage enrolment, payment status, and draw history.</p></div>
         <div className="participant-filters">
-          {campaignsQuery.data?.length ? <label className="campaign-select-label">CAMPAIGN<select aria-label="Campaign" onChange={(event) => { setCampaignId(event.target.value); setAgentFilter(''); }} value={campaignId}>{campaignsQuery.data.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}</select></label> : null}
-          {role === 'SUPER_ADMIN' && <label className="campaign-select-label">AGENT<select aria-label="Filter by agent" onChange={(event) => setAgentFilter(event.target.value)} value={agentFilter}><option value="">All agents</option>{agentsQuery.data?.map((agent) => <option key={agent.id} value={agent.id}>{agent.agentCode} · {agent.name}</option>)}</select></label>}
+          {campaignsQuery.data?.length ? <label className="campaign-select-label">CAMPAIGN<select aria-label="Campaign" onChange={(event) => { setCampaignId(event.target.value); setAgentFilter(''); setPage(1); }} value={campaignId}>{campaignsQuery.data.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}</select></label> : null}
+          {role === 'SUPER_ADMIN' && <label className="campaign-select-label">AGENT<select aria-label="Filter by agent" onChange={(event) => { setAgentFilter(event.target.value); setPage(1); }} value={agentFilter}><option value="">All agents</option>{agentsQuery.data?.map((agent) => <option key={agent.id} value={agent.id}>{agent.agentCode} · {agent.name}</option>)}</select></label>}
         </div>
       </div>
 
@@ -352,8 +389,8 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
         <>
           {notice && <div className="prize-notice participant-notice" role="status">{notice}</div>}
           <div className="participant-toolbar">
-            <div className="participant-search"><Search size={16} /><input aria-label="Search participants" onChange={(event) => setSearch(event.target.value)} placeholder="Search name, email, mobile, or ID" value={search} /></div>
-            <label className="participant-filter">STATUS<select aria-label="Filter by status" onChange={(event) => setStatus(event.target.value)} value={status}><option value="">All statuses</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <div className="participant-search"><Search size={16} /><input aria-label="Search participants" onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search serial no., name, email, mobile, or ID" value={search} /></div>
+            <label className="participant-filter">STATUS<select aria-label="Filter by status" onChange={(event) => { setStatus(event.target.value); setPage(1); }} value={status}><option value="">All statuses</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <div className="participant-export-actions" role="group" aria-label="Export participant list">
               <button className="quiet-button" disabled={exportDisabled} onClick={() => void exportList('xlsx')} title="Export the filtered list to Excel" type="button"><FileSpreadsheet size={14} />{listExporting === 'xlsx' ? 'Exporting…' : 'Export Excel'}</button>
               <button className="quiet-button" disabled={exportDisabled} onClick={() => void exportList('pdf')} title="Export the filtered list to PDF" type="button"><FileText size={14} />{listExporting === 'pdf' ? 'Exporting…' : 'Export PDF'}</button>
@@ -388,10 +425,10 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
           </form>}
 
           <div className="participant-list-panel">
-            <div className="participant-list-heading"><div><h2>{currentCampaign?.name}</h2><p>{participantQuery.data?.pagination.total ?? 0} participants</p></div><span className="participant-list-note">Payment status for each scheduled draw</span></div>
+            <div className="participant-list-heading"><div><h2>{currentCampaign?.name}</h2><p>{pagination?.total ?? 0} participants</p></div><div className="participant-list-tools">{sort.key !== 'newest' && <button className="text-button" onClick={() => { setSort({ key: 'newest', order: 'desc' }); setPage(1); }} type="button">Show newest first</button>}<span className="participant-list-note">Payment status for each scheduled draw</span></div></div>
             {participantQuery.isPending ? <div className="campaign-loading">Loading participants…</div> : participantQuery.isError ? <div className="campaign-error">{participantQuery.error.message}</div> : participantQuery.data.participants.length === 0 ? (
               <div className="prize-empty"><UsersRound size={21} /><strong>{search || status ? 'No matching participants' : 'No participants yet'}</strong><span>{search || status ? 'Try another search or status.' : 'Add the first participant to this campaign.'}</span></div>
-            ) : <div className="schedule-table-wrap"><table className="participant-table"><thead><tr><th>NUMBER</th><th>PARTICIPANT</th><th>ADDRESS</th>{role === 'SUPER_ADMIN' && <th>AGENT</th>}<th>CONTACT</th><th>STATUS</th><th>PAID DRAWS</th><th /></tr></thead>
+            ) : <div className="schedule-table-wrap"><table className="participant-table"><thead><tr>{sortHeader('serial', 'NUMBER')}{sortHeader('name', 'PARTICIPANT')}<th>ADDRESS</th>{role === 'SUPER_ADMIN' && <th>AGENT</th>}<th>CONTACT</th><th>STATUS</th><th>PAID DRAWS</th><th /></tr></thead>
               <tbody>{participantQuery.data.participants.map((participant) => <tr key={participant.id}>
                 <td><span className="participant-serial">{participant.participantNumber}</span></td>
                 <td><button className="participant-name-link" onClick={() => setSelectedId(participant.id)}><span className="participant-avatar small">{participant.name.slice(0, 1).toUpperCase()}</span><strong>{participant.name}</strong></button></td>
@@ -403,6 +440,15 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
                 <td>{participant.drawPayments?.filter((payment) => payment.status === 'PAID').length ?? 0} / {participant.drawPayments?.length ?? 0}</td>
                 <td><button className="row-more" aria-label={`View ${participant.name}`} onClick={() => setSelectedId(participant.id)}><ArrowUpRight size={16} /></button></td>
               </tr>)}</tbody></table></div>}
+            {pagination && pagination.total > 0 && <nav aria-label="Participant pages" className="participant-pagination">
+              <span>Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, pagination.total)} of {pagination.total}</span>
+              <label>Rows per page<select aria-label="Rows per page" onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }} value={pageSize}>{pageSizes.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+              <div className="participant-page-buttons">
+                <button aria-label="Previous page" className="quiet-button" disabled={page <= 1} onClick={() => setPage(page - 1)} type="button"><ChevronLeft size={14} /> Previous</button>
+                <span aria-current="page">Page {page} of {pageCount}</span>
+                <button aria-label="Next page" className="quiet-button" disabled={page >= pageCount} onClick={() => setPage(page + 1)} type="button">Next <ChevronRight size={14} /></button>
+              </div>
+            </nav>}
           </div>
         </>
       )}

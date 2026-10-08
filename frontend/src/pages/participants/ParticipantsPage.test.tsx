@@ -74,7 +74,48 @@ describe('participant management screen', () => {
     await user.click(screen.getAllByRole('button', { name: 'Cancel' })[0]);
 
     expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
-    expect(listParticipants).toHaveBeenCalledWith('campaign-id', '', '', '');
+    expect(listParticipants).toHaveBeenCalledWith('campaign-id', {
+      search: '', status: '', agentId: '', page: 1, pageSize: 25, sort: 'newest', order: undefined,
+    });
+  });
+
+  it('AC-PAR-29/30 pages through the list and sorts by serial number and name', async () => {
+    const row = (index: number) => ({
+      id: `participant-${index}`, participantNumber: 1000 + index, campaignId: 'campaign-id', agentId: 'agent-id',
+      name: `Member ${index}`, email: null, mobile: null, externalUserId: null, address: null,
+      status: 'REGISTERED' as const, createdAt: new Date().toISOString(), drawPayments: [],
+    });
+    vi.mocked(listParticipants).mockImplementation(async (_campaignId, options = {}) => {
+      const page = options.page ?? 1;
+      const pageSize = options.pageSize ?? 25;
+      return {
+        participants: Array.from({ length: Math.min(pageSize, 60 - (page - 1) * pageSize) }, (_, index) => row((page - 1) * pageSize + index + 1)),
+        pagination: { page, pageSize, total: 60, pageCount: Math.ceil(60 / pageSize) },
+      };
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText('Showing 1–25 of 60')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('Showing 26–50 of 60')).toBeInTheDocument();
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'NUMBER' }));
+    expect(listParticipants).toHaveBeenLastCalledWith('campaign-id', expect.objectContaining({ page: 1, sort: 'serial', order: 'asc' }));
+    await user.click(screen.getByRole('button', { name: 'NUMBER' }));
+    expect(listParticipants).toHaveBeenLastCalledWith('campaign-id', expect.objectContaining({ sort: 'serial', order: 'desc' }));
+    expect(screen.getByRole('columnheader', { name: 'NUMBER' })).toHaveAttribute('aria-sort', 'descending');
+    await user.click(screen.getByRole('button', { name: 'PARTICIPANT' }));
+    expect(listParticipants).toHaveBeenLastCalledWith('campaign-id', expect.objectContaining({ sort: 'name', order: 'asc' }));
+
+    await user.selectOptions(screen.getByLabelText('Rows per page'), '50');
+    expect(await screen.findByText('Showing 1–50 of 60')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Next page' }));
+    await user.type(screen.getByLabelText('Search participants'), '1250');
+    expect(listParticipants).toHaveBeenLastCalledWith('campaign-id', expect.objectContaining({ search: '1250', page: 1 }));
   });
 
   it('requires and submits the selected agent assignment for a super admin', async () => {

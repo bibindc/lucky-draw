@@ -3,14 +3,19 @@ declare module 'lucide-react' {
 
   type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number | string }>;
 
+  export const ArrowDown: IconComponent;
   export const ArrowDownRight: IconComponent;
   export const ArrowLeft: IconComponent;
+  export const ArrowUp: IconComponent;
+  export const ArrowUpDown: IconComponent;
   export const ArrowUpRight: IconComponent;
   export const AlertTriangle: IconComponent;
   export const Award: IconComponent;
   export const Bell: IconComponent;
   export const CalendarDays: IconComponent;
   export const ChevronDown: IconComponent;
+  export const ChevronLeft: IconComponent;
+  export const ChevronRight: IconComponent;
   export const CalendarClock: IconComponent;
   export const Check: IconComponent;
   export const CircleHelp: IconComponent;

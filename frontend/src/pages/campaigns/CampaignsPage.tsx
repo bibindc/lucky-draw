@@ -10,6 +10,7 @@ import {
   type DrawSchedule,
   type NewCampaign,
 } from '../../api/campaigns';
+import { spreadDrawDates } from '../../utils/drawSchedule';
 import { indiaDateTimeToIso, indiaDateTimeValue } from '../../utils/indiaTime';
 
 const campaignQueryKey = ['campaigns'];
@@ -19,6 +20,7 @@ type CampaignForm = {
   name: string;
   durationMonths: string;
   drawCount: string;
+  firstDraw: string;
   totalAmount: string;
   perDrawAmount: string;
   draws: ScheduleField[];
@@ -29,27 +31,37 @@ function localDateTime(date: Date): string {
   return localDate.toISOString().slice(0, 16);
 }
 
-function defaultSchedule(count: number): ScheduleField[] {
+function defaultFirstDraw(): string {
   const firstDraw = new Date();
   firstDraw.setDate(firstDraw.getDate() + 14);
   firstDraw.setHours(18, 30, 0, 0);
+  return localDateTime(firstDraw);
+}
 
-  return Array.from({ length: count }, (_, index) => {
-    const date = new Date(firstDraw);
-    date.setDate(firstDraw.getDate() + index * 14);
-    return { dateTime: localDateTime(date), prizeCount: '5' };
-  });
+const maxDrawCount = 60;
+
+/** Rebuilds the schedule evenly across the duration (AC-CAM-9), keeping prize counts already entered. */
+function withEvenSchedule(form: CampaignForm): CampaignForm {
+  const drawCount = Math.max(1, Math.min(maxDrawCount, Number(form.drawCount) || 1));
+  const durationMonths = Math.max(1, Number(form.durationMonths) || 1);
+  const dates = spreadDrawDates(form.firstDraw, durationMonths, drawCount);
+  if (dates.length === 0) return form;
+  return {
+    ...form,
+    draws: dates.map((dateTime, index) => ({ dateTime, prizeCount: form.draws[index]?.prizeCount ?? '5' })),
+  };
 }
 
 function initialForm(): CampaignForm {
-  return {
+  return withEvenSchedule({
     name: '',
     durationMonths: '5',
     drawCount: '10',
+    firstDraw: defaultFirstDraw(),
     totalAmount: '3000',
     perDrawAmount: '300',
-    draws: defaultSchedule(10),
-  };
+    draws: [],
+  });
 }
 
 function formatCurrency(amountPaise: number) {
@@ -143,19 +155,8 @@ export default function CampaignsPage() {
     }));
   }
 
-  function changeDrawCount(value: string) {
-    const nextCount = Math.max(1, Math.min(60, Number(value) || 1));
-    setForm((current) => {
-      const draws = current.draws.slice(0, nextCount);
-      while (draws.length < nextCount) {
-        const previous = draws.at(-1);
-        const nextDate = previous ? new Date(previous.dateTime) : new Date();
-        nextDate.setDate(nextDate.getDate() + (previous ? 14 : 14));
-        nextDate.setHours(18, 30, 0, 0);
-        draws.push({ dateTime: localDateTime(nextDate), prizeCount: '5' });
-      }
-      return { ...current, drawCount: value, draws };
-    });
+  function updateScheduleField(field: 'durationMonths' | 'drawCount' | 'firstDraw', value: string) {
+    setForm((current) => withEvenSchedule({ ...current, [field]: value }));
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -226,12 +227,13 @@ export default function CampaignsPage() {
           <div className="campaign-form-title"><div><h2>New campaign</h2><p>Set the campaign terms and schedule each draw.</p></div><button className="quiet-button" onClick={() => setCreating(false)} type="button">Cancel</button></div>
           <div className="campaign-fields">
             <label className="field-wide">Campaign name<input autoFocus onChange={(event) => updateField('name', event.target.value)} required value={form.name} /></label>
-            <label>Duration (months)<input min="1" onChange={(event) => updateField('durationMonths', event.target.value)} required type="number" value={form.durationMonths} /></label>
-            <label>Number of draws<input min="1" onChange={(event) => changeDrawCount(event.target.value)} required type="number" value={form.drawCount} /></label>
+            <label>Duration (months)<input min="1" onChange={(event) => updateScheduleField('durationMonths', event.target.value)} required type="number" value={form.durationMonths} /></label>
+            <label>Number of draws<input max={maxDrawCount} min="1" onChange={(event) => updateScheduleField('drawCount', event.target.value)} required type="number" value={form.drawCount} /></label>
+            <label>First draw<input onChange={(event) => updateScheduleField('firstDraw', event.target.value)} required type="datetime-local" value={form.firstDraw} /></label>
             <label>Total amount (₹)<input min="1" onChange={(event) => updateField('totalAmount', event.target.value)} required type="number" value={form.totalAmount} /></label>
             <label>Per-draw amount (₹)<input min="1" onChange={(event) => updateField('perDrawAmount', event.target.value)} required type="number" value={form.perDrawAmount} /></label>
           </div>
-          <div className="schedule-form-heading"><div><h3>Draw schedule</h3><p>Dates must be unique, future-facing, and in order.</p></div><span>{form.draws.length} draws</span></div>
+          <div className="schedule-form-heading"><div><h3>Draw schedule</h3><p>Spread evenly across the duration from the first draw. Adjust any date if needed; dates must be unique, future-facing, and in order.</p></div><span>{form.draws.length} draws</span></div>
           <div className="schedule-inputs">
             {form.draws.map((draw, index) => <div className="schedule-input-row" key={index}>
               <span className="draw-number">{String(index + 1).padStart(2, '0')}</span>

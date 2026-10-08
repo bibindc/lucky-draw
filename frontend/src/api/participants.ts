@@ -89,11 +89,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export async function listParticipants(campaignId: string, search = '', status = '', agentId = '') {
+export type ParticipantSort = 'newest' | 'serial' | 'name';
+
+export type ParticipantListQuery = {
+  search?: string;
+  status?: string;
+  agentId?: string;
+  page?: number;
+  pageSize?: number;
+  sort?: ParticipantSort;
+  order?: 'asc' | 'desc';
+};
+
+export async function listParticipants(campaignId: string, options: ParticipantListQuery = {}) {
   const query = new URLSearchParams();
-  if (search) query.set('search', search);
-  if (status) query.set('status', status);
-  if (agentId) query.set('agentId', agentId);
+  if (options.search) query.set('search', options.search);
+  if (options.status) query.set('status', options.status);
+  if (options.agentId) query.set('agentId', options.agentId);
+  if (options.page) query.set('page', String(options.page));
+  if (options.pageSize) query.set('pageSize', String(options.pageSize));
+  if (options.sort && options.sort !== 'newest') query.set('sort', options.sort);
+  if (options.order) query.set('order', options.order);
   return request<{
     participants: Participant[];
     pagination: { page: number; pageSize: number; total: number; pageCount: number };

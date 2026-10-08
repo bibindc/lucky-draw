@@ -76,7 +76,7 @@ Routers mounted on the shared `/api/v1` prefix must guard each route individuall
 | POST | /draws/:id/rounds | Draw one round of an in-progress draw: `{ round, prizeId, participantId? }` (participantId only, and required, in Manual mode); returns the new winner and draw progress |
 | POST | /campaigns/:id/participants | Add participant with `participantNumber` (optional; the next suggested number is used when omitted) and optional `address`; super admin supplies agentId, agent is assigned automatically |
 | GET | /participants/next-serial | Next suggested serial number `{ serial: number | null }` (null when 1000–9999 are all used); super admins and agents |
-| GET | /campaigns/:id/participants | Super-admin list/search/filter by status and agent; agent sees own assignments only |
+| GET | /campaigns/:id/participants | Super-admin list/search/filter by status and agent; agent sees own assignments only. `search` also matches `participantNumber` exactly when it is all digits; `page` (default 1), `pageSize` (default 25, max 100); `sort` = `newest` (default: createdAt desc, then serial desc) \| `serial` \| `name` (then serial asc) with `order` = `asc` (default) \| `desc`; returns `pagination { page, pageSize, total, pageCount }` |
 | GET | /campaigns/:id/participants/export | Unpaginated rows for list export; accepts the same `search`, `status`, `agentId` filters as the list and the same agent scoping; ordered by serial; at most 10,000 rows, otherwise `EXPORT_TOO_LARGE` |
 | GET | /participants/:id | Scoped detail with payments and history |
 | PATCH | /participants/:id | Edit contact/profile fields and address; super admin may reassign to an active agent and change `participantNumber` |

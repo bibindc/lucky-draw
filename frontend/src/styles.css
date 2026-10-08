@@ -404,6 +404,16 @@ h1 { color: #24302a; font-family: Manrope, sans-serif; font-size: 25px; font-wei
 .participant-list-heading h2 { color: #354139; font-family: Manrope, sans-serif; font-size: 11px; }
 .participant-list-heading p, .participant-list-note { color: #939d95; font-size: 8px; margin-top: 4px; }
 .participant-list-note { margin: 0; }
+.participant-list-tools { align-items: center; display: flex; gap: 12px; }
+.participant-list-tools .text-button { font-size: 8px; }
+.sort-header { align-items: center; background: transparent; border: 0; color: inherit; display: inline-flex; font: inherit; gap: 4px; letter-spacing: inherit; padding: 0; }
+.sort-header:hover, .sort-header.active { color: #327251; }
+.participant-pagination { align-items: center; border-top: 1px solid #edf0ec; color: #7d8880; display: flex; flex-wrap: wrap; font-size: 9px; gap: 10px 18px; justify-content: space-between; padding: 10px 15px; }
+.participant-pagination label { align-items: center; display: inline-flex; gap: 6px; }
+.participant-pagination select { border: 1px solid #e0e6de; border-radius: 4px; color: #4f5c53; font-size: 9px; padding: 4px 6px; }
+.participant-page-buttons { align-items: center; display: flex; gap: 8px; }
+.participant-page-buttons .quiet-button { align-items: center; display: inline-flex; gap: 3px; }
+.participant-page-buttons .quiet-button:disabled { cursor: default; opacity: .45; }
 .participant-table { border-collapse: collapse; min-width: 650px; text-align: left; width: 100%; }
 .participant-table th { border-bottom: 1px solid #edf0ec; color: #98a29a; font-size: 8px; font-weight: 700; letter-spacing: .5px; padding: 10px; white-space: nowrap; }
 .participant-table th:first-child, .participant-table td:first-child { padding-left: 15px; }
