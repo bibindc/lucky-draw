@@ -29,6 +29,8 @@ export type PaymentHistoryEntry = {
   amountPaise: number;
   method: string;
   status: string;
+  /** The day the money was received; createdAt is when it was entered. */
+  paidOn: string;
   createdAt: string;
   allocations?: { drawPayment: { draw: { drawNumber: number; status: string } } }[];
 };
@@ -163,6 +165,8 @@ export async function recordPayment(participantId: string, input: {
   count: number;
   method: 'CASH' | 'UPI' | 'BANK_TRANSFER' | 'OTHER';
   reference?: string;
+  /** YYYY-MM-DD in India. */
+  paidOn?: string;
 }) {
   return request<{ payment: PaymentHistoryEntry }>(`/participants/${participantId}/payments`, {
     method: 'POST',

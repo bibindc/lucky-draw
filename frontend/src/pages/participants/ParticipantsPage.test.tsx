@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ParticipantsPage from './ParticipantsPage';
@@ -8,6 +8,7 @@ import { listCampaigns } from '../../api/campaigns';
 import { CampaignApiError } from '../../api/campaigns';
 import { createParticipant, exportParticipants, getNextSerial, getParticipant, listParticipants, recordPayment, updateParticipant } from '../../api/participants';
 import { exportParticipantPdf } from '../../utils/participantPdf';
+import { indiaDateValue } from '../../utils/indiaTime';
 import { listApprovalRequests, submitApprovalRequest } from '../../api/approvals';
 import { exportParticipantListExcel, exportParticipantListPdf } from '../../utils/participantListExport';
 
@@ -348,7 +349,8 @@ describe('participant serial numbers and address', () => {
     const participant = {
       ...created, participantNumber: 1005, agent: { id: 'agent-id', agentCode: 'AG-1000', name: 'Agent One' }, winners: [],
       drawPayments: [{ id: 'dp', status: 'PAID' as const, retainedCredit: false, draw: { drawNumber: 1, scheduledAt: '2027-01-01T12:00:00.000Z', status: 'SCHEDULED' as const } }],
-      paymentTransactions: [{ id: 'tx', amountPaise: 30_000, method: 'CASH', status: 'RECORDED', createdAt: '2026-10-05T00:00:00.000Z', allocations: [{ drawPayment: { draw: { drawNumber: 1, status: 'SCHEDULED' } } }] }],
+      // Collected on 2 Oct (India), entered on 5 Oct (AC-PAY-8).
+      paymentTransactions: [{ id: 'tx', amountPaise: 30_000, method: 'CASH', status: 'RECORDED', paidOn: '2026-10-01T18:30:00.000Z', createdAt: '2026-10-05T00:00:00.000Z', allocations: [{ drawPayment: { draw: { drawNumber: 1, status: 'SCHEDULED' } } }] }],
     };
     vi.mocked(listParticipants).mockResolvedValue({ participants: [participant], pagination: { page: 1, pageSize: 25, total: 1, pageCount: 1 } });
     vi.mocked(getParticipant).mockResolvedValue(participant);
@@ -357,6 +359,7 @@ describe('participant serial numbers and address', () => {
 
     await user.click(await screen.findByRole('button', { name: 'View Riya Sharma' }));
     expect(await screen.findByText('₹300')).toBeInTheDocument();
+    expect(screen.getByText('recorded · paid 2 Oct 2026 · entered 5 Oct 2026')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Void' })).not.toBeInTheDocument();
   });
 
@@ -444,9 +447,13 @@ describe('agent changes go to approval', () => {
     const user = await openAsAgent();
     await user.click(await screen.findByRole('button', { name: /Request payment/ }));
     expect(screen.getByText('REQUEST PAYMENT · NEEDS APPROVAL')).toBeInTheDocument();
+    // AC-PAY-8: the date defaults to today in India and can be set to the day the agent collected the money.
+    const paymentDate = screen.getByLabelText(/Payment date/);
+    expect(paymentDate).toHaveValue(indiaDateValue());
+    fireEvent.change(paymentDate, { target: { value: '2026-10-02' } });
     await user.click(screen.getByRole('button', { name: 'Send for approval' }));
 
-    expect(submitApprovalRequest).toHaveBeenCalledWith({ type: 'PAYMENT', participantId: 'participant-id', payload: { count: 1, method: 'CASH', reference: undefined } });
+    expect(submitApprovalRequest).toHaveBeenCalledWith({ type: 'PAYMENT', participantId: 'participant-id', payload: { count: 1, method: 'CASH', reference: undefined, paidOn: '2026-10-02' } });
     expect(recordPayment).not.toHaveBeenCalled();
   });
 

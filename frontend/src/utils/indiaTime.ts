@@ -10,6 +10,16 @@ export function indiaDateTimeValue(date: string | Date): string {
   return `${value('year')}-${value('month')}-${value('day')}T${value('hour')}:${value('minute')}`;
 }
 
+/** A calendar date (YYYY-MM-DD) as it is in India, for `date` inputs; today by default. */
+export function indiaDateValue(date: string | Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(date));
+}
+
+/** e.g. "9 Oct 2026", the India date of an instant. */
+export function formatIndiaDate(date: string | Date): string {
+  return new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeZone: 'Asia/Kolkata' }).format(new Date(date));
+}
+
 export function indiaDateTimeToIso(value: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
   if (!match) throw new Error('Enter a valid date and time.');

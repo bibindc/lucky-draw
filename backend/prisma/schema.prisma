@@ -141,6 +141,8 @@ model PaymentTransaction {
   amountPaise         Int
   method              String
   reference           String?
+  /// The day the money was received (start of that day in Asia/Kolkata); may be earlier than createdAt.
+  paidOn              DateTime            @default(now())
   status              String              @default("RECORDED")
   recordedByAdminId   String
   collectedByAgentId  String?

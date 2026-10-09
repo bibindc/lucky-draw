@@ -584,6 +584,7 @@ h1 { color: #24302a; font-family: Manrope, sans-serif; font-size: 25px; font-wei
 .payment-dialog > label { align-items: center; color: #6b786f; display: flex; flex-wrap: wrap; font-size: 8px; font-weight: 600; gap: 5px; margin-bottom: 13px; }
 .payment-dialog > label select, .payment-dialog > label input { background: #fff; border: 1px solid #dfe5dd; border-radius: 4px; color: #354139; flex: 1 0 100%; font: inherit; font-size: 10px; font-weight: 400; height: 36px; outline: 0; padding: 0 9px; width: 100%; }
 .payment-dialog > label select:focus, .payment-dialog > label input:focus { border-color: #639175; box-shadow: 0 0 0 2px #4d89651a; }
+.payment-dialog > label .field-hint { color: #819080; flex: 1 0 100%; font-size: 8px; font-weight: 400; }
 .payment-amount { background: #f5f9f3; border: 1px solid #e3ece0; border-radius: 6px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 13px; padding: 12px 14px; }
 .payment-amount span { color: #819080; font-size: 7px; font-weight: 700; letter-spacing: .6px; }
 .payment-amount strong { color: #2f6b52; font-family: Manrope, sans-serif; font-size: 22px; line-height: 1.1; }

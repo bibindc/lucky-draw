@@ -110,7 +110,7 @@ export function describePayload(type: RequestType, payload: RequestPayload, opti
     case 'PARTICIPANT_UPDATE':
       return fields([['name', 'Name'], ['mobile', 'Mobile'], ['email', 'Email'], ['externalUserId', 'User ID'], ['address', 'Address']]);
     case 'PAYMENT':
-      return [`${value('count') ?? '?'} upcoming draw${payload.count === 1 ? '' : 's'}`, ...fields([['method', 'Method'], ['reference', 'Reference']])];
+      return [`${value('count') ?? '?'} upcoming draw${payload.count === 1 ? '' : 's'}`, ...fields([['method', 'Method'], ['reference', 'Reference'], ['paidOn', 'Paid on']])];
     case 'WINNER_CLAIM':
       return fields([['claimStatus', 'Status'], ['claimNote', 'Note']]);
     case 'COMPLIMENTARY_CHOICE':

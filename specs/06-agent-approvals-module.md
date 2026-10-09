@@ -34,7 +34,7 @@ Out of scope: super admins' own changes (always immediate), and anything agents 
 |---|---|---|---|
 | `PARTICIPANT_CREATE` | – (duplicate checks instead) | campaign, serial number, name, email, mobile, user ID, address | Add participant (AC-PAR-1..10, 23, 25) assigned to the agent |
 | `PARTICIPANT_UPDATE` | participant | any of name, email, mobile, user ID, address | Edit participant (AC-PAR-12, 14) |
-| `PAYMENT` | participant | number of upcoming draws, method, reference | Record payment (AC-PAY-2, 3; AC-ADV-1..3) |
+| `PAYMENT` | participant | number of upcoming draws, method, reference, payment date | Record payment (AC-PAY-2, 3, 8; AC-ADV-1..3) |
 | `WINNER_CLAIM` | winner record | claim status, note | Update claim/delivery (AC-WIN-3) |
 | `COMPLIMENTARY_CHOICE` | participant | complimentary option | Record choice (AC-CMP-3) |
 | `COMPLIMENTARY_DELIVERY` | participant | delivered at, note | Mark delivered (AC-CMP-4) |

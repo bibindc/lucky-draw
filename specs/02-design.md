@@ -18,7 +18,7 @@ Backend layers: routes → controllers (validation with Zod) → services (busin
 | ManualDrawRecord | id, drawId (unique), conductedBy, drawMethod, venue?, witnesses?, notes?, evidenceReference?, createdAt; one row per manually recorded draw |
 | Participant | id, participantNumber (unique across campaigns, 1000–9999, chosen at creation with a suggested default; changeable by super admins), address? (free text, ≤ 500 chars), campaignId, agentId?, name, email?, mobile?, externalUserId?, status, createdAt; unique per campaign on email, mobile, externalUserId (where not null) |
 | DrawPayment | id, participantId, drawId, status (NOT_PAID/PAID/WAIVED), retainedCredit (bool), transactionId?, unique(participantId, drawId) |
-| PaymentTransaction | id, participantId, amountPaise, method, reference?, status (RECORDED/VOIDED), recordedByAdminId, createdAt, voidedAt? |
+| PaymentTransaction | id, participantId, amountPaise, method, reference?, paidOn (start of the India day the money was received; AC-PAY-8), status (RECORDED/VOIDED), recordedByAdminId, createdAt (when entered), voidedAt? |
 | Prize | id, campaignId, drawId?, name, description, valuePaise?, rank, totalQuantity, assignedQuantity; null drawId is legacy/unassigned inventory |
 | PrizeImage | prizeId (unique, cascades with the prize), mimeType (image/jpeg, image/png, image/webp), data (bytes, ≤ 2 MB), size, updatedAt; one optional image per prize, stored in the database so backups include it |
 

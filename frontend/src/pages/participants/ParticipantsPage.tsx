@@ -22,6 +22,7 @@ import PendingRequestsPanel from '../../components/PendingRequestsPanel';
 import PrizeClaimPanel from '../../components/PrizeClaimPanel';
 import { submitApprovalRequest } from '../../api/approvals';
 import { exportParticipantPdf } from '../../utils/participantPdf';
+import { formatIndiaDate, indiaDateValue } from '../../utils/indiaTime';
 import {
   exportParticipantListExcel,
   exportParticipantListPdf,
@@ -76,6 +77,7 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
   const [paymentCount, setPaymentCount] = useState('1');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'UPI' | 'BANK_TRANSFER' | 'OTHER'>('CASH');
   const [paymentReference, setPaymentReference] = useState('');
+  const [paymentDate, setPaymentDate] = useState(() => indiaDateValue());
   const [form, setForm] = useState<NewParticipant>({ name: '', email: '', mobile: '', externalUserId: '', agentId: '', address: '' });
   const [profileForm, setProfileForm] = useState<NewParticipant>({ name: '', email: '', mobile: '', externalUserId: '', agentId: '', address: '' });
   // Serial numbers are edited as text so a half-typed value can be shown and validated.
@@ -179,7 +181,7 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
   }
   const paymentMutation = useMutation({
     mutationFn: async () => {
-      const details = { count: Number(paymentCount), method: paymentMethod, reference: paymentReference.trim() || undefined };
+      const details = { count: Number(paymentCount), method: paymentMethod, reference: paymentReference.trim() || undefined, paidOn: paymentDate };
       if (isAgent) await submitApprovalRequest({ type: 'PAYMENT', participantId: selectedId!, payload: details });
       else await recordPayment(selectedId!, details);
     },
@@ -349,8 +351,8 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
                   <span className={`payment-status ${payment.status.toLowerCase().replace('_', '-')}`}>{payment.status.replace('_', ' ').toLowerCase()}</span>
                 </div>)}</div>
               </section>
-              <section className="participant-history-panel"><div className="participant-panel-heading"><div><h2>Payment history</h2><span>{participant.paymentTransactions?.length ?? 0} entries</span></div>{participant.status !== 'WINNER' && unpaidScheduledDraws.length > 0 && <button className="text-button" onClick={() => setPaymentOpen(true)}><Plus size={14} /> {isAgent ? 'Request payment' : 'Record payment'}</button>}</div>
-                {participant.paymentTransactions?.length ? <div className="payment-history-list">{participant.paymentTransactions.map((entry) => <div className="payment-history-row" key={entry.id}><strong>₹{(entry.amountPaise / 100).toLocaleString('en-IN')}</strong><span>{entry.method.replaceAll('_', ' ').toLowerCase()}</span><small>{entry.status.toLowerCase()} · {new Date(entry.createdAt).toLocaleDateString('en-IN')}</small></div>)}</div> : <p className="history-empty">No payments recorded yet.</p>}
+              <section className="participant-history-panel"><div className="participant-panel-heading"><div><h2>Payment history</h2><span>{participant.paymentTransactions?.length ?? 0} entries</span></div>{participant.status !== 'WINNER' && unpaidScheduledDraws.length > 0 && <button className="text-button" onClick={() => { setPaymentDate(indiaDateValue()); paymentMutation.reset(); setPaymentOpen(true); }}><Plus size={14} /> {isAgent ? 'Request payment' : 'Record payment'}</button>}</div>
+                {participant.paymentTransactions?.length ? <div className="payment-history-list">{participant.paymentTransactions.map((entry) => <div className="payment-history-row" key={entry.id}><strong>₹{(entry.amountPaise / 100).toLocaleString('en-IN')}</strong><span>{entry.method.replaceAll('_', ' ').toLowerCase()}</span><small>{entry.status.toLowerCase()} · paid {formatIndiaDate(entry.paidOn)}{indiaDateValue(entry.paidOn) !== indiaDateValue(entry.createdAt) && ` · entered ${formatIndiaDate(entry.createdAt)}`}</small></div>)}</div> : <p className="history-empty">No payments recorded yet.</p>}
               </section>
             </div>
             <PendingRequestsPanel participantId={participant.id} />
@@ -362,6 +364,7 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
                 <label>Draws to cover<select aria-label="Draws to cover" onChange={(event) => setPaymentCount(event.target.value)} value={paymentCount}>{unpaidScheduledDraws.map((_, index) => <option key={index} value={index + 1}>{index + 1} {index === 0 ? 'draw' : 'draws'} · {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(((index + 1) * (currentCampaign?.perDrawAmountPaise ?? 0)) / 100)}</option>)}</select></label>
                 <div className="payment-amount"><span>AMOUNT DUE</span><strong>{formattedPaymentAmount}</strong><small>{paymentCount} × {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((currentCampaign?.perDrawAmountPaise ?? 0) / 100)} per draw</small></div>
                 <label>Payment method<select onChange={(event) => setPaymentMethod(event.target.value as typeof paymentMethod)} value={paymentMethod}><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="BANK_TRANSFER">Bank transfer</option><option value="OTHER">Other</option></select></label>
+                <label>Payment date<input max={indiaDateValue()} onChange={(event) => setPaymentDate(event.target.value)} required type="date" value={paymentDate} /><small className="field-hint">The day the money was received, if it was collected earlier.</small></label>
                 <label>Reference note <span className="optional-label">OPTIONAL</span><input onChange={(event) => setPaymentReference(event.target.value)} value={paymentReference} /></label>
                 {paymentMutation.isError && <p className="payment-error" role="alert">{paymentMutation.error.message}</p>}
                 <div className="payment-dialog-actions"><button className="quiet-button" onClick={() => setPaymentOpen(false)} type="button">Cancel</button><button className="primary-button" disabled={paymentMutation.isPending} type="submit">{paymentMutation.isPending ? 'Sending…' : isAgent ? 'Send for approval' : 'Confirm payment'}</button></div>

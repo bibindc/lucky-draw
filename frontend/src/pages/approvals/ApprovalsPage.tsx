@@ -15,14 +15,14 @@ import {
   type RequestType,
 } from '../../api/approvals';
 import { listComplimentaryOptions } from '../../api/complimentary';
-import { indiaDateTimeToIso, indiaDateTimeValue } from '../../utils/indiaTime';
+import { indiaDateTimeToIso, indiaDateTimeValue, indiaDateValue } from '../../utils/indiaTime';
 import { participantLabel } from './MyRequestsPage';
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }).format(new Date(value));
 }
 
-type Field = { key: string; label: string; kind?: 'number' | 'textarea' | 'select' | 'datetime'; options?: [string, string][] };
+type Field = { key: string; label: string; kind?: 'number' | 'textarea' | 'select' | 'date' | 'datetime'; options?: [string, string][] };
 
 const participantFields: Field[] = [
   { key: 'name', label: 'Name' }, { key: 'mobile', label: 'Mobile' }, { key: 'email', label: 'Email' },
@@ -38,6 +38,7 @@ function fieldsFor(type: RequestType, payload: RequestPayload, optionChoices: [s
       { key: 'count', label: 'Upcoming draws', kind: 'number' },
       { key: 'method', label: 'Method', kind: 'select', options: [['CASH', 'Cash'], ['UPI', 'UPI'], ['BANK_TRANSFER', 'Bank transfer'], ['OTHER', 'Other']] },
       { key: 'reference', label: 'Reference' },
+      { key: 'paidOn', label: 'Paid on', kind: 'date' },
     ];
     case 'WINNER_CLAIM': return [
       { key: 'claimStatus', label: 'Claim status', kind: 'select', options: [['PENDING', 'Pending'], ['CLAIMED', 'Claimed'], ['DELIVERED', 'Delivered']] },
@@ -55,6 +56,7 @@ function normalise(fields: Field[], values: Record<string, string>): RequestPayl
     const value = values[key] ?? '';
     if (kind === 'number') payload[key] = value === '' ? undefined : Number(value);
     else if (kind === 'datetime') { if (value) payload[key] = indiaDateTimeToIso(value); }
+    else if (kind === 'date') { if (value) payload[key] = value; }
     else payload[key] = value;
   }
   return payload;
@@ -135,7 +137,7 @@ function ReviewDialog({ requestId, onClose }: { requestId: string; onClose: () =
                   ? <select aria-label={label} onChange={(event) => setValues({ ...values, [key]: event.target.value })} value={values[key] ?? ''}>{options?.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select>
                   : kind === 'textarea'
                     ? <textarea aria-label={label} onChange={(event) => setValues({ ...values, [key]: event.target.value })} rows={2} value={values[key] ?? ''} />
-                    : <input aria-label={label} inputMode={kind === 'number' ? 'numeric' : undefined} onChange={(event) => setValues({ ...values, [key]: event.target.value })} type={kind === 'datetime' ? 'datetime-local' : 'text'} value={values[key] ?? ''} />}
+                    : <input aria-label={label} inputMode={kind === 'number' ? 'numeric' : undefined} onChange={(event) => setValues({ ...values, [key]: event.target.value })} max={kind === 'date' ? indiaDateValue() : undefined} type={kind === 'datetime' ? 'datetime-local' : kind === 'date' ? 'date' : 'text'} value={values[key] ?? ''} />}
               </label>)}
             </div></fieldset>}
 

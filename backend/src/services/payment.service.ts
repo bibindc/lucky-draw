@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import type { z } from 'zod';
 import type { recordPaymentSchema } from '../validators/payment.validator';
 import { cancelActiveChoice, hasDeliveredChoice } from './complimentary.service';
+import { indiaToday, startOfIndiaDate } from '../utils/indiaDate';
 
 type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 
@@ -62,6 +63,7 @@ export async function recordParticipantPayment(
         amountPaise: participant.campaign.perDrawAmountPaise * selectedPayments.length,
         method: input.method,
         reference: input.reference || null,
+        paidOn: startOfIndiaDate(input.paidOn ?? indiaToday()),
         recordedByAdminId: adminId,
         collectedByAgentId: options.collectedByAgentId ?? null,
       },
@@ -163,7 +165,7 @@ export async function voidParticipantPayment(transactionId: string) {
 export async function listParticipantPayments(participantId: string) {
   return prisma.paymentTransaction.findMany({
     where: { participantId },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ paidOn: 'desc' }, { createdAt: 'desc' }],
     include: {
       recordedByAdmin: { select: { id: true, name: true, email: true } },
       allocations: { include: { drawPayment: { include: { draw: { select: { drawNumber: true } } } } } },

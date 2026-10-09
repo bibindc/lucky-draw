@@ -149,6 +149,17 @@ describe('approving requests (live database)', () => {
     expect(await prisma.paymentTransaction.findFirstOrThrow({ where: { participantId: own.id } })).toMatchObject({ amountPaise: 30_000, method: 'UPI' });
   });
 
+  it('AC-PAY-8 records the date the agent collected the payment, not the approval date', async () => {
+    const { own } = await seed();
+    const request = await service.submitRequest(agentId, { type: 'PAYMENT', participantId: own.id, payload: { count: 1, method: 'CASH', paidOn: '2026-01-15' } });
+
+    await service.approveRequest(request.id, adminId);
+
+    const recorded = await prisma.paymentTransaction.findFirstOrThrow({ where: { participantId: own.id } });
+    expect(recorded.paidOn.toISOString()).toBe('2026-01-14T18:30:00.000Z');
+    expect(recorded.createdAt.getTime()).toBeGreaterThan(recorded.paidOn.getTime());
+  });
+
   it('AC-APR-8/5 rejects with a reason, after which the agent can resubmit or withdraw', async () => {
     const { own } = await seed();
     const first = await service.submitRequest(agentId, payment(own.id));

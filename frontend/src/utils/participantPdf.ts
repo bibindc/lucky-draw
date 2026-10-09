@@ -1,6 +1,7 @@
 import type { jsPDF as JsPDFDocument } from 'jspdf';
 import type { Campaign } from '../api/campaigns';
 import type { ParticipantDetail } from '../api/participants';
+import { formatIndiaDate } from './indiaTime';
 
 function dateInIndia(value: string) {
   return new Intl.DateTimeFormat('en-IN', {
@@ -97,8 +98,9 @@ export async function exportParticipantPdf(participant: ParticipantDetail, campa
 
   autoTable(document, {
     startY: cursorY + 10,
-    head: [['DATE', 'AMOUNT', 'METHOD', 'STATUS', 'DRAWS COVERED']],
+    head: [['PAID ON', 'ENTERED', 'AMOUNT', 'METHOD', 'STATUS', 'DRAWS COVERED']],
     body: participant.paymentTransactions.map((transaction) => [
+      formatIndiaDate(transaction.paidOn),
       dateInIndia(transaction.createdAt),
       inr(transaction.amountPaise),
       transaction.method.replaceAll('_', ' '),

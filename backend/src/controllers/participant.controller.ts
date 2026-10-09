@@ -200,7 +200,7 @@ export async function getParticipant(request: Request, response: Response) {
       },
       agent: { select: { id: true, agentCode: true, name: true } },
       paymentTransactions: {
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ paidOn: 'desc' }, { createdAt: 'desc' }],
         include: {
           recordedByAdmin: { select: { id: true, name: true, email: true } },
           allocations: { include: { drawPayment: { include: { draw: { select: { drawNumber: true, status: true } } } } } },

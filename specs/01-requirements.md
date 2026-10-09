@@ -79,7 +79,8 @@ As an admin, I want to record the ₹300 a participant pays for a draw, so that 
 - AC-PAY-4: A draw cannot be paid after it is `Completed`. A draw already `Paid` or `Waived` cannot be paid again.
 - AC-PAY-5: Admin can void a payment recorded in error while the draw is `Scheduled`; the draw returns to `Not Paid` and the transaction is kept with status `Voided`. The participant detail screen does not offer a Void action; voiding is available only through the API (`POST /payments/:transactionId/void`).
 - AC-PAY-6: A participant becomes `Eligible` once at least the next upcoming draw is `Paid`; `Payment Pending` otherwise.
-- AC-PAY-7: Payment history lists every transaction (date, amount, draws covered, method, recorded by, status).
+- AC-PAY-7: Payment history lists every transaction (payment date, amount, draws covered, method, recorded by, status), latest payment date first. When a payment was entered on a later day than it was paid, the entry date is shown too.
+- AC-PAY-8: Recording or requesting a payment takes a payment date: the day the money was received, as an India date. It defaults to today and may be any earlier day (an agent may collect the money and enter it later), but not a future day (`VALIDATION_ERROR`). An agent's requested date is kept when the request is approved, and the super admin may correct it while approving. The date is stored separately from when the payment was entered, which existing payments take as their payment date. It appears in payment history, on the participant PDF and in pending payment requests.
 
 ## US-4 Record advance payment
 As an admin, I want to record payment for multiple future draws at once.
