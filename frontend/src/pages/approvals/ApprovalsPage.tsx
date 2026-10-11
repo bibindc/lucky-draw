@@ -125,7 +125,7 @@ function ReviewDialog({ requestId, onClose }: { requestId: string; onClose: () =
               {request.type === 'PARTICIPANT_UPDATE' && current
                 ? Object.keys(request.payload).map((key) => <div key={key}><dt>{participantFields.find((field) => field.key === key)?.label ?? key}</dt><dd><s className="current-value">{String((current as Record<string, unknown>)[key] ?? '—')}</s> → <strong>{String(request.payload[key] || '—')}</strong></dd></div>)
                 : describePayload(request.type, request.payload, optionNames).map((line) => <div key={line}><dd>{line}</dd></div>)}
-              {request.type === 'PAYMENT' && current && <div><dt>Unpaid upcoming draws now</dt><dd>{current.drawPayments.filter(({ status, draw }) => status === 'NOT_PAID' && draw.status === 'SCHEDULED').map(({ draw }) => draw.drawNumber).join(', ') || 'none'}</dd></div>}
+              {request.type === 'PAYMENT' && current && <div><dt>Unpaid installments now</dt><dd>{current.drawPayments.filter(({ status, draw }) => status === 'NOT_PAID' && (draw.status === 'SCHEDULED' || draw.status === 'COMPLETED')).map(({ draw }) => draw.drawNumber).join(', ') || 'none'}</dd></div>}
               {request.originalPayload && <div><dt>Agent’s original</dt><dd>{describePayload(request.type, request.originalPayload, optionNames).join(' · ')}</dd></div>}
               {request.rejectionReason && <div><dt>Rejection reason</dt><dd>{request.rejectionReason}</dd></div>}
               {request.decidedByAdmin && request.decidedAt && <div><dt>Decided</dt><dd>{formatDate(request.decidedAt)} by {request.decidedByAdmin.name}</dd></div>}

@@ -92,7 +92,7 @@ export default function DrawsPage() {
               const pill = statusPill(draw, due);
               return <article className={`draw-list-row ${canStart || draw.status === 'IN_PROGRESS' ? 'draw-due' : ''}`} key={draw.id}>
                 <span className="draw-number">{pad(draw.drawNumber ?? 0)}</span>
-                <div className="draw-list-date"><strong>{formatDate(draw.scheduledAt)}</strong><small>Draw {draw.drawNumber} · {statusLabels[draw.status ?? 'SCHEDULED']}</small></div>
+                <div className="draw-list-date"><strong>{formatDate(draw.scheduledAt)}</strong><small>Draw {draw.drawNumber} · {statusLabels[draw.status ?? 'SCHEDULED']}{draw.drawNumber === drawsQuery.data.at(-1)?.drawNumber && <span className="draw-mode-tag bumper" title="Open to everyone who paid every installment, including earlier winners">BUMPER</span>}</small></div>
                 <div className="draw-list-metric"><UsersRound size={14} /><strong>{draw._count?.drawPayments ?? 0}</strong><span>eligible</span></div>
                 <div className="draw-list-metric"><Gift size={14} /><strong>{draw.prizeCount}</strong><span>prizes</span></div>
                 <span className={`status-pill ${pill.tone}`}><i />{pill.label}</span>

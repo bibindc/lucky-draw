@@ -193,7 +193,8 @@ model Prize {
 model Winner {
   id                String            @id @default(uuid())
   drawId            String
-  participantId     String            @unique
+  // A participant wins at most one regular draw, plus possibly the final (bumper) draw (D2).
+  participantId     String
   prizeId           String
   drawPosition      Int               @default(1)
   drawnAt           DateTime          @default(now())
@@ -209,6 +210,8 @@ model Winner {
   recordedByAdmin   Admin?            @relation("WinnerRecordedBy", fields: [recordedByAdminId], references: [id], onDelete: SetNull)
   approvalRequests  ApprovalRequest[]
 
+  @@unique([drawId, participantId])
+  @@index([participantId])
   @@index([drawId, createdAt])
 }
 

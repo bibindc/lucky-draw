@@ -780,6 +780,7 @@ h1 { color: #24302a; font-family: Manrope, sans-serif; font-size: 25px; font-wei
 .draw-mode-tag { border-radius: 3px; display: inline-block; font-size: 7px; font-weight: 700; letter-spacing: .3px; margin-left: 6px; padding: 2px 5px; }
 .draw-mode-tag.manual { background: #f7f0df; color: #8f7038; }
 .draw-mode-tag.automatic { background: #eef3ee; color: #5f7d68; }
+.draw-mode-tag.bumper { background: #fbeee0; color: #9a5b1f; }
 @media (max-width: 700px) {
   .manual-draw-fields, .manual-draw-picker, .manual-draw-summary { grid-template-columns: 1fr; }
   .draw-row-actions { flex-direction: column; }

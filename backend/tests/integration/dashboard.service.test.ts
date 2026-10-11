@@ -26,10 +26,10 @@ beforeAll(async () => {
     prisma.draw.create({ data: { campaignId, drawNumber: 3, scheduledAt: new Date(now.getTime() + 3 * 86_400_000), prizeCount: 3 } }),
   ]);
 
-  // status per draw [1, 2, 3]; A won draw 1 and keeps a retained-credit payment for draw 3.
+  // status per draw [1, 2, 3]. Asha won draw 1 and kept paying (bumper only); Dev missed draw 1, so is in no draw yet.
   const people = [
-    { name: 'Asha', number: 1000, createdAt: minutesAgo(60 * 24 * 30), payments: ['PAID', 'WAIVED', 'PAID'] },
-    { name: 'Bala', number: 1001, createdAt: minutesAgo(300), payments: ['NOT_PAID', 'PAID', 'NOT_PAID'] },
+    { name: 'Asha', number: 1000, createdAt: minutesAgo(60 * 24 * 30), payments: ['PAID', 'PAID', 'PAID'] },
+    { name: 'Bala', number: 1001, createdAt: minutesAgo(300), payments: ['PAID', 'PAID', 'NOT_PAID'] },
     { name: 'Chitra', number: 1002, createdAt: minutesAgo(200), payments: ['NOT_PAID', 'NOT_PAID', 'NOT_PAID'] },
     { name: 'Dev', number: 1003, createdAt: minutesAgo(100), payments: ['NOT_PAID', 'PAID', 'PAID'] },
   ];
@@ -40,7 +40,7 @@ beforeAll(async () => {
         campaignId, name: person.name, participantNumber: person.number, email: `${person.name}@example.com`, createdAt: person.createdAt,
         drawPayments: {
           create: [draw1, draw2, draw3].map((draw, index) => ({
-            drawId: draw.id, status: person.payments[index], retainedCredit: person.name === 'Asha' && index === 2,
+            drawId: draw.id, status: person.payments[index],
           })),
         },
       },
@@ -83,19 +83,19 @@ describe('campaign dashboard summary (live database)', () => {
     const dashboard = await getCampaignDashboard(campaignId, now);
 
     expect(dashboard?.participants).toEqual({ total: 4, addedLast7Days: 3, winners: 1 });
-    // Draw 2: Bala and Dev paid; Asha is a winner (waived); Chitra unpaid.
-    expect(dashboard?.eligibility).toEqual({ nextDrawEligible: 2, activeParticipants: 3, percentOfActive: 67, pendingForNextDraw: 1 });
+    // Draw 2: only Bala paid installments 1 and 2. Asha has won; Chitra owes 2 installments and Dev 1 (draw 1).
+    expect(dashboard?.eligibility).toEqual({ nextDrawEligible: 1, activeParticipants: 3, percentOfActive: 33, pendingForNextDraw: 2 });
     expect(dashboard?.prizes).toEqual({ availableUnits: 4, assignedUnits: 1, totalUnits: 5, prizeCount: 2, unassignedPrizeCount: 1 });
-    // Voided payment excluded; 5 paid of 8 payable draw payments.
-    expect(dashboard?.payments).toEqual({ collectedPaise: 90_000, transactionCount: 2, dueForNextDrawPaise: 30_000, collectionRatePercent: 63 });
+    // Voided payment excluded; 3 installments due before draw 2; 7 paid of 12 payable (missed ones stay payable, winners' are optional).
+    expect(dashboard?.payments).toEqual({ collectedPaise: 90_000, transactionCount: 2, dueForNextDrawPaise: 90_000, collectionRatePercent: 58 });
   });
 
-  it('AC-DSH-4 lists upcoming scheduled draws with eligibility that excludes winners', async () => {
+  it('AC-DSH-4 lists upcoming scheduled draws with eligibility that excludes winners except from the bumper', async () => {
     const dashboard = await getCampaignDashboard(campaignId, now);
 
     expect(dashboard?.upcomingDraws.map(({ drawNumber, eligibleCount, isDue, prizeCount }) => ({ drawNumber, eligibleCount, isDue, prizeCount }))).toEqual([
-      { drawNumber: 2, eligibleCount: 2, isDue: true, prizeCount: 2 },
-      // Asha's retained-credit payment for draw 3 must not count.
+      { drawNumber: 2, eligibleCount: 1, isDue: true, prizeCount: 2 },
+      // The final (bumper) draw: Asha, a winner who paid every installment. Dev paid draw 3 but missed draw 1.
       { drawNumber: 3, eligibleCount: 1, isDue: false, prizeCount: 3 },
     ]);
   });

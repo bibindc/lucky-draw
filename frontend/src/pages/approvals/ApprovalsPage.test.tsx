@@ -74,7 +74,7 @@ describe('super-admin approvals', () => {
     await user.click(await screen.findByRole('button', { name: /Review Payment/ }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Review request' });
-    expect(dialog).toHaveTextContent('Unpaid upcoming draws now2, 3');
+    expect(dialog).toHaveTextContent('Unpaid installments now2, 3');
     await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
     expect(approveApprovalRequest).toHaveBeenCalledWith('r1', undefined);
   });

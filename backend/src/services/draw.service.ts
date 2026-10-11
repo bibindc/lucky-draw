@@ -4,6 +4,7 @@ import type { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import type { drawRoundSchema, startDrawSchema } from '../validators/draw.validator';
 import { cancelActiveChoice } from './complimentary.service';
+import { drawEligibilityWhere, isFinalDraw, participantStatus } from './eligibility';
 
 type Transaction = Prisma.TransactionClient;
 type StartDrawInput = z.infer<typeof startDrawSchema>;
@@ -36,14 +37,11 @@ const resultInclude = {
 } satisfies Prisma.DrawInclude;
 
 // Eligible pool (D5) and this draw's prizes that still have stock, highest rank first.
-async function loadDrawPool(client: Transaction | typeof prisma, draw: Pick<Draw, 'id' | 'campaignId'>) {
+async function loadDrawPool(client: Transaction | typeof prisma, draw: Pick<Draw, 'id' | 'campaignId' | 'drawNumber'>) {
+  const finalDraw = await isFinalDraw(client, draw);
   const [eligibleParticipants, prizes] = await Promise.all([
     client.participant.findMany({
-      where: {
-        campaignId: draw.campaignId,
-        drawPayments: { some: { drawId: draw.id, status: 'PAID' } },
-        winners: { none: {} },
-      },
+      where: drawEligibilityWhere(draw, finalDraw),
       select: {
         id: true, participantNumber: true, name: true, email: true, mobile: true,
         agent: { select: { id: true, agentCode: true, name: true } },
@@ -63,30 +61,40 @@ function plannedRounds(draw: Pick<Draw, 'prizeCount'>, poolSize: number, availab
   return Math.min(draw.prizeCount, poolSize, availableUnits);
 }
 
+// Stored statuses follow the next draw: once a draw completes, who is Eligible depends on the following one (AC-PAY-6).
+async function refreshParticipantStatuses(transaction: Transaction, campaignId: string) {
+  const participants = await transaction.participant.findMany({
+    where: { campaignId, status: { in: ['ELIGIBLE', 'PAYMENT_PENDING'] }, winners: { none: {} } },
+    select: { id: true, status: true, drawPayments: { select: { status: true, draw: { select: { drawNumber: true, status: true } } } } },
+  });
+  const changes = new Map<string, string[]>();
+  for (const participant of participants) {
+    const status = participantStatus(participant.drawPayments, false);
+    if (status !== participant.status) changes.set(status, [...(changes.get(status) ?? []), participant.id]);
+  }
+  for (const [status, ids] of changes) {
+    await transaction.participant.updateMany({ where: { id: { in: ids } }, data: { status } });
+  }
+}
+
 async function completeDraw(transaction: Transaction, draw: Draw, now: Date) {
-  const isFinalDraw = draw.drawNumber === await transaction.draw.count({ where: { campaignId: draw.campaignId } });
-  if (isFinalDraw) {
+  await transaction.draw.update({ where: { id: draw.id }, data: { status: 'COMPLETED', executedAt: now } });
+  if (await isFinalDraw(transaction, draw)) {
     await transaction.participant.updateMany({
       where: { campaignId: draw.campaignId, winners: { none: {} }, status: { not: 'COMPLETED' } },
       data: { status: 'COMPLETED' },
     });
+  } else {
+    await refreshParticipantStatuses(transaction, draw.campaignId);
   }
-  await transaction.draw.update({ where: { id: draw.id }, data: { status: 'COMPLETED', executedAt: now } });
 }
 
-// AC-DRW-11 / AC-WAV-1..2: a winner's later draws are waived or kept as retained credit in the round's transaction.
+// AC-DRW-11: a winner's effects happen in the round's transaction. Later installments are not waived: a winner may
+// keep paying to enter the final (bumper) draw (D2).
 async function applyWinnerEffects(transaction: Transaction, draw: Draw, participantId: string, now: Date) {
   await transaction.participant.update({ where: { id: participantId }, data: { status: 'WINNER' } });
   // AC-CMP-6: winners lose an undelivered complimentary prize.
   await cancelActiveChoice(transaction, participantId, `Won draw ${draw.drawNumber}`, now);
-  const futurePayments = await transaction.drawPayment.findMany({
-    where: { participantId, draw: { campaignId: draw.campaignId, drawNumber: { gt: draw.drawNumber } } },
-    select: { id: true, status: true },
-  });
-  const unpaidIds = futurePayments.filter(({ status }) => status === 'NOT_PAID').map(({ id }) => id);
-  const paidIds = futurePayments.filter(({ status }) => status === 'PAID').map(({ id }) => id);
-  if (unpaidIds.length) await transaction.drawPayment.updateMany({ where: { id: { in: unpaidIds } }, data: { status: 'WAIVED' } });
-  if (paidIds.length) await transaction.drawPayment.updateMany({ where: { id: { in: paidIds } }, data: { retainedCredit: true } });
 }
 
 export async function startDraw(drawId: string, adminId: string, input: StartDrawInput, now = new Date()) {
@@ -184,7 +192,7 @@ export async function drawRound(
     let participantId: string;
     if (input.participantId) {
       if (!eligibleParticipants.some(({ id }) => id === input.participantId)) {
-        throw new DrawRuleError('INELIGIBLE_WINNER', 'The winner must be in this draw’s eligible pool (paid for this draw and not already a winner).', 400);
+        throw new DrawRuleError('INELIGIBLE_WINNER', 'The winner must be in this draw’s eligible pool (every installment up to this draw paid, and not already a winner except in the final draw).', 400);
       }
       participantId = input.participantId;
     } else {

@@ -20,7 +20,7 @@ Out of scope (see §10): stock limits, exports and dashboard figures for complim
 
 ## 2. Decisions
 
-- **C1. Eligibility.** A participant is eligible when every draw payment of their campaign is `Paid` and they have not won any draw. Eligibility can start before the campaign ends (for example, after an advance payment covering all draws). A participant who joined after some draws were completed has those draws `Not Paid` and not payable (OQ-4), so is not eligible.
+- **C1. Eligibility.** A participant is eligible when every draw payment of their campaign is `Paid` and they have not won any draw. Eligibility can start before the campaign ends (for example, after an advance payment covering all draws). A participant who joined after some draws were completed has those draws `Not Paid`, and becomes eligible once they pay them (OQ-4, D5). Winners never become eligible, even if they pay every installment for the bumper draw (D2).
 - **C2. Losing eligibility.** A participant who wins a draw later, or whose payment is voided so that a draw is no longer `Paid`, stops being eligible. An undelivered choice is then cancelled automatically (§5).
 - **C3. Options.** Each campaign has its own list of complimentary prize options. There is no stock limit: any number of participants may choose the same option.
 - **C4. One choice, final.** An eligible participant has at most one active choice. Once recorded it cannot be changed by users; only the automatic cancellation in C2 ends it.

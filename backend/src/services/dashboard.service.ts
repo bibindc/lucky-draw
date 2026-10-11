@@ -1,4 +1,6 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
+import { drawEligibilityWhere } from './eligibility';
 
 const upcomingDrawLimit = 3;
 const activityLimit = 6;
@@ -18,8 +20,6 @@ export function mergeActivity(events: DashboardActivity[], limit = activityLimit
   return [...events].sort((left, right) => right.at.getTime() - left.at.getTime()).slice(0, limit);
 }
 
-// Unpaid or won participants are excluded from eligibility (D5).
-const notWinner = { participant: { winners: { none: {} } } };
 
 export async function getCampaignDashboard(campaignId: string, now = new Date()) {
   const campaign = await prisma.campaign.findUnique({
@@ -34,12 +34,20 @@ export async function getCampaignDashboard(campaignId: string, now = new Date())
   const nextDraw = upcomingDraws[0] ?? null;
   const participantScope = { participant: { campaignId } };
 
+  const finalDrawNumber = campaign.draws.at(-1)?.drawNumber;
+  const eligibleIn = (draw: (typeof campaign.draws)[number]) => drawEligibilityWhere(draw, draw.drawNumber === finalDrawNumber);
+  // Who could enter the next draw: everyone for the final (bumper) draw, otherwise those who have not won (D2).
+  const candidates: Prisma.ParticipantWhereInput = { campaignId, ...(nextDraw?.drawNumber === finalDrawNumber ? {} : { winners: { none: {} } }) };
+  const unpaidUpToNext: Prisma.DrawPaymentWhereInput = { status: 'NOT_PAID', draw: { campaignId, drawNumber: { lte: nextDraw?.drawNumber ?? 0 } } };
+
   const [
     participantTotal,
     participantsAddedRecently,
     winnerCount,
     eligibleByDraw,
+    candidateCount,
     pendingForNextDraw,
+    unpaidForNextDraw,
     prizeStock,
     unassignedPrizeCount,
     payments,
@@ -53,15 +61,13 @@ export async function getCampaignDashboard(campaignId: string, now = new Date())
   ] = await Promise.all([
     prisma.participant.count({ where: { campaignId } }),
     prisma.participant.count({ where: { campaignId, createdAt: { gte: new Date(now.getTime() - recentWindowMs) } } }),
-    prisma.winner.count({ where: { draw: { campaignId } } }),
-    upcomingDraws.length
-      ? prisma.drawPayment.groupBy({
-          by: ['drawId'],
-          where: { drawId: { in: upcomingDraws.map(({ id }) => id) }, status: 'PAID', ...notWinner },
-          _count: { _all: true },
-        })
-      : Promise.resolve([]),
-    nextDraw ? prisma.drawPayment.count({ where: { drawId: nextDraw.id, status: 'NOT_PAID', ...notWinner } }) : Promise.resolve(0),
+    // People, not wins: a winner may also win the bumper.
+    prisma.participant.count({ where: { campaignId, winners: { some: {} } } }),
+    Promise.all(upcomingDraws.map((draw) => prisma.participant.count({ where: eligibleIn(draw) }))),
+    nextDraw ? prisma.participant.count({ where: candidates }) : Promise.resolve(0),
+    // Candidates still owing any installment up to the next draw, and how many installments they owe (AC-DSH-3).
+    nextDraw ? prisma.participant.count({ where: { ...candidates, drawPayments: { some: unpaidUpToNext } } }) : Promise.resolve(0),
+    nextDraw ? prisma.drawPayment.count({ where: { ...unpaidUpToNext, participant: candidates } }) : Promise.resolve(0),
     prisma.prize.aggregate({
       where: { campaignId, drawId: { not: null } },
       _sum: { totalQuantity: true, assignedQuantity: true },
@@ -74,7 +80,8 @@ export async function getCampaignDashboard(campaignId: string, now = new Date())
       _count: { _all: true },
     }),
     prisma.drawPayment.count({ where: { ...participantScope, status: 'PAID' } }),
-    prisma.drawPayment.count({ where: { ...participantScope, status: 'NOT_PAID', draw: { status: 'SCHEDULED' } } }),
+    // Payable: missed installments stay payable after their draw; a winner's later installments are optional.
+    prisma.drawPayment.count({ where: { participant: { campaignId, winners: { none: {} } }, status: 'NOT_PAID', draw: { status: { in: ['SCHEDULED', 'COMPLETED'] } } } }),
     prisma.participant.findMany({
       where: { campaignId },
       orderBy: { createdAt: 'desc' },
@@ -117,10 +124,10 @@ export async function getCampaignDashboard(campaignId: string, now = new Date())
     }),
   ]);
 
-  const eligibleCounts = new Map(eligibleByDraw.map((group) => [group.drawId, group._count._all]));
+  const eligibleCounts = new Map(upcomingDraws.map((draw, index) => [draw.id, eligibleByDraw[index]]));
   const completedDraws = campaign.draws.filter(({ status }) => status === 'COMPLETED').length;
   const cancelledDraws = campaign.draws.filter(({ status }) => status === 'CANCELLED').length;
-  const activeParticipants = participantTotal - winnerCount;
+  const activeParticipants = nextDraw ? candidateCount : participantTotal - winnerCount;
   const nextDrawEligible = nextDraw ? eligibleCounts.get(nextDraw.id) ?? 0 : 0;
   const totalPrizeUnits = prizeStock._sum.totalQuantity ?? 0;
   const assignedPrizeUnits = prizeStock._sum.assignedQuantity ?? 0;
@@ -197,7 +204,7 @@ export async function getCampaignDashboard(campaignId: string, now = new Date())
     payments: {
       collectedPaise: payments._sum.amountPaise ?? 0,
       transactionCount: payments._count._all,
-      dueForNextDrawPaise: pendingForNextDraw * campaign.perDrawAmountPaise,
+      dueForNextDrawPaise: unpaidForNextDraw * campaign.perDrawAmountPaise,
       collectionRatePercent: payableDrawPayments ? Math.round((paidDrawPayments / payableDrawPayments) * 100) : 0,
     },
     upcomingDraws: upcomingDraws.map((draw) => ({

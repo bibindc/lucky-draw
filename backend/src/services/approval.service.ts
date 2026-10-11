@@ -126,7 +126,6 @@ export async function submitRequest(agentId: string, input: SubmitInput) {
         parseOrThrow('PARTICIPANT_UPDATE', input.payload);
       } else if (input.type === 'PAYMENT') {
         const details = parseOrThrow('PAYMENT', input.payload);
-        if (participant.winners.length) throw new ApprovalError('PAYMENT_NOT_ALLOWED', 'A winner cannot be charged for a later draw.');
         selectPaymentDraws(participant.drawPayments, details);
       } else if (input.type === 'COMPLIMENTARY_CHOICE') {
         const { optionId } = parseOrThrow('COMPLIMENTARY_CHOICE', input.payload);

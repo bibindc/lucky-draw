@@ -4,6 +4,7 @@ import type { z } from 'zod';
 import type { recordPaymentSchema } from '../validators/payment.validator';
 import { cancelActiveChoice, hasDeliveredChoice } from './complimentary.service';
 import { indiaToday, startOfIndiaDate } from '../utils/indiaDate';
+import { participantStatus } from './eligibility';
 
 type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 
@@ -16,17 +17,6 @@ export class PaymentRuleError extends Error {
     this.code = code;
     this.status = status;
   }
-}
-
-function nextStatus(
-  drawPayments: Array<DrawPayment & { draw: Draw }>,
-  isWinner: boolean,
-): 'WINNER' | 'ELIGIBLE' | 'PAYMENT_PENDING' {
-  if (isWinner) return 'WINNER';
-  const nextDrawPayment = drawPayments
-    .filter((payment) => payment.draw.status === 'SCHEDULED' || payment.draw.status === 'IN_PROGRESS')
-    .sort((left, right) => left.draw.drawNumber - right.draw.drawNumber)[0];
-  return nextDrawPayment?.status === 'PAID' ? 'ELIGIBLE' : 'PAYMENT_PENDING';
 }
 
 export async function recordParticipantPayment(
@@ -48,14 +38,8 @@ export async function recordParticipantPayment(
       },
     });
     if (!participant) throw new PaymentRuleError('NOT_FOUND', 'Participant was not found.', 404);
-    if (participant.winners.length > 0) {
-      throw new PaymentRuleError('PAYMENT_NOT_ALLOWED', 'A winner cannot be charged for a later draw.');
-    }
-
+    // Winners may keep paying, to enter the final (bumper) draw (D2).
     const selectedPayments = selectPaymentDraws(participant.drawPayments, input);
-    if (selectedPayments.some((payment) => payment.draw.status !== 'SCHEDULED')) {
-      throw new PaymentRuleError('PAYMENT_NOT_ALLOWED', 'A draw cannot be paid once it has started or completed.');
-    }
 
     const payment = await transaction.paymentTransaction.create({
       data: {
@@ -94,7 +78,7 @@ export async function recordParticipantPayment(
     );
     await transaction.participant.update({
       where: { id: participantId },
-      data: { status: nextStatus(updatedPayments, false) },
+      data: { status: participantStatus(updatedPayments, participant.winners.length > 0) },
     });
 
     return transaction.paymentTransaction.findUniqueOrThrow({
@@ -122,8 +106,12 @@ export async function voidParticipantPayment(transactionId: string) {
     if (payment.status !== 'RECORDED') {
       throw new PaymentRuleError('PAYMENT_NOT_ALLOWED', 'This payment transaction has already been voided.');
     }
-    if (payment.allocations.length === 0 || payment.allocations.some(({ drawPayment }) => drawPayment.draw.status !== 'SCHEDULED')) {
-      throw new PaymentRuleError('PAYMENT_NOT_ALLOWED', 'A payment can only be voided while every covered draw is scheduled (not started).');
+    // A payment that counted towards a draw's pool cannot be undone once that draw has started. A late payment for a
+    // draw already held when it was recorded never counted, so it can still be voided.
+    const lockedDraw = ({ draw }: { draw: Draw }) =>
+      draw.status !== 'SCHEDULED' && !(draw.status === 'COMPLETED' && (draw.startedAt ?? new Date(0)) < payment.createdAt);
+    if (payment.allocations.length === 0 || payment.allocations.some(({ drawPayment }) => lockedDraw(drawPayment))) {
+      throw new PaymentRuleError('PAYMENT_NOT_ALLOWED', 'A payment can only be voided while no draw it covered has started since it was recorded.');
     }
 
     // AC-CMP-7: the complimentary prize was given on the strength of this payment.
@@ -149,13 +137,13 @@ export async function voidParticipantPayment(transactionId: string) {
       where: { participantId: payment.participantId },
       include: { draw: true },
     });
-    const hasWinner = await transaction.winner.findUnique({
+    const hasWinner = await transaction.winner.findFirst({
       where: { participantId: payment.participantId },
       select: { id: true },
     });
     await transaction.participant.update({
       where: { id: payment.participantId },
-      data: { status: nextStatus(participantPayments, Boolean(hasWinner)) },
+      data: { status: participantStatus(participantPayments, Boolean(hasWinner)) },
     });
 
     return voidedPayment;
@@ -177,25 +165,29 @@ type SelectablePayment = Pick<DrawPayment, 'id' | 'drawId' | 'status'> & {
   draw: Pick<Draw, 'status' | 'drawNumber'>;
 };
 
+// A draw being held cannot take payments (AC-DRW-10); a missed installment stays payable after its draw (AC-PAY-4).
+export function isPayable(payment: { status: string; draw: { status: string } }) {
+  return payment.status === 'NOT_PAID' && (payment.draw.status === 'SCHEDULED' || payment.draw.status === 'COMPLETED');
+}
+
 export function selectPaymentDraws<T extends SelectablePayment>(
   drawPayments: T[],
   input: Pick<RecordPaymentInput, 'count' | 'drawIds'>,
 ): T[] {
-  const unpaidScheduled = drawPayments
-    .filter((payment) => payment.draw.status === 'SCHEDULED' && payment.status === 'NOT_PAID')
-    .sort((left, right) => left.draw.drawNumber - right.draw.drawNumber);
+  // Oldest unpaid installment first, so missed installments are settled before later ones (AC-ADV-2).
+  const unpaid = drawPayments.filter(isPayable).sort((left, right) => left.draw.drawNumber - right.draw.drawNumber);
   const requestedCount = input.count ?? input.drawIds?.length ?? 0;
-  if (input.count && input.count > unpaidScheduled.length) {
-    throw new PaymentRuleError('PAYMENT_NOT_ALLOWED', 'Payment count exceeds unpaid scheduled draws.');
+  if (input.count && input.count > unpaid.length) {
+    throw new PaymentRuleError('PAYMENT_NOT_ALLOWED', 'Payment count exceeds the unpaid installments.');
   }
 
   const selectedPayments = input.drawIds
-    ? unpaidScheduled.filter((payment) => input.drawIds?.includes(payment.drawId))
-    : unpaidScheduled.slice(0, requestedCount);
+    ? unpaid.filter((payment) => input.drawIds?.includes(payment.drawId))
+    : unpaid.slice(0, requestedCount);
   if (selectedPayments.length !== requestedCount) {
     throw new PaymentRuleError(
       'PAYMENT_NOT_ALLOWED',
-      'One or more selected draws are completed, waived, already paid, or not part of this participant’s campaign.',
+      'One or more selected draws are in progress, already paid, or not part of this participant’s campaign.',
     );
   }
   return selectedPayments;

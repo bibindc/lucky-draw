@@ -193,8 +193,8 @@ export function HowItWorks({ campaign }: { campaign: Campaign }) {
   const steps = [
     { icon: UsersRound, title: 'Join through an agent', text: 'Register with your area agent and receive your own serial number.' },
     { icon: Wallet, title: `Pay ${rupees(campaign.perDrawAmountPaise)} per draw`, text: `${campaign.drawCount} draws over ${campaign.durationMonths} ${campaign.durationMonths === 1 ? 'month' : 'months'} — ${rupees(campaign.totalAmountPaise)} in all.` },
-    { icon: TicketCheck, title: 'Winners drawn every draw', text: 'Each prize is drawn one at a time, only from members who have paid for that draw.' },
-    { icon: Trophy, title: 'Win and stop paying', text: 'Once you win, you do not pay for the remaining draws.' },
+    { icon: TicketCheck, title: 'Winners drawn every draw', text: 'Each prize is drawn one at a time, from members who have paid every installment up to that draw. Missed one? Pay it to get back in.' },
+    { icon: Trophy, title: 'Winners can go for the bumper', text: 'A winner sits out the other draws, but can keep paying to enter the final bumper draw.' },
     { icon: HandHeart, title: 'Everyone else gets a gift', text: 'Pay every draw without winning and choose a complimentary gift.' },
   ];
   return (

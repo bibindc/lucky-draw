@@ -229,9 +229,11 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
   }
 
   const currentCampaign = campaignsQuery.data?.find((campaign) => campaign.id === campaignId);
-  const unpaidScheduledDraws = detailQuery.data?.drawPayments?.filter(
-    (payment) => payment.status === 'NOT_PAID' && payment.draw.status === 'SCHEDULED',
-  ) ?? [];
+  // Missed installments stay payable after their draw and are settled first; winners may pay towards the bumper (AC-PAY-4, D2).
+  const unpaidInstallments = (detailQuery.data?.drawPayments ?? [])
+    .filter((payment) => payment.status === 'NOT_PAID' && (payment.draw.status === 'SCHEDULED' || payment.draw.status === 'COMPLETED'))
+    .sort((left, right) => left.draw.drawNumber - right.draw.drawNumber);
+  const coveredDraws = unpaidInstallments.slice(0, Number(paymentCount)).map(({ draw }) => draw.drawNumber);
   const paymentAmount = Number(paymentCount) * (currentCampaign?.perDrawAmountPaise ?? 0);
   const exportDisabled = listExporting !== null || !currentCampaign || participantQuery.isPending || participantQuery.isError
     || !participantQuery.data?.pagination.total;
@@ -351,7 +353,7 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
                   <span className={`payment-status ${payment.status.toLowerCase().replace('_', '-')}`}>{payment.status.replace('_', ' ').toLowerCase()}</span>
                 </div>)}</div>
               </section>
-              <section className="participant-history-panel"><div className="participant-panel-heading"><div><h2>Payment history</h2><span>{participant.paymentTransactions?.length ?? 0} entries</span></div>{participant.status !== 'WINNER' && unpaidScheduledDraws.length > 0 && <button className="text-button" onClick={() => { setPaymentDate(indiaDateValue()); paymentMutation.reset(); setPaymentOpen(true); }}><Plus size={14} /> {isAgent ? 'Request payment' : 'Record payment'}</button>}</div>
+              <section className="participant-history-panel"><div className="participant-panel-heading"><div><h2>Payment history</h2><span>{participant.paymentTransactions?.length ?? 0} entries</span></div>{unpaidInstallments.length > 0 && <button className="text-button" onClick={() => { setPaymentDate(indiaDateValue()); paymentMutation.reset(); setPaymentOpen(true); }}><Plus size={14} /> {isAgent ? 'Request payment' : 'Record payment'}</button>}</div>
                 {participant.paymentTransactions?.length ? <div className="payment-history-list">{participant.paymentTransactions.map((entry) => <div className="payment-history-row" key={entry.id}><strong>₹{(entry.amountPaise / 100).toLocaleString('en-IN')}</strong><span>{entry.method.replaceAll('_', ' ').toLowerCase()}</span><small>{entry.status.toLowerCase()} · paid {formatIndiaDate(entry.paidOn)}{indiaDateValue(entry.paidOn) !== indiaDateValue(entry.createdAt) && ` · entered ${formatIndiaDate(entry.createdAt)}`}</small></div>)}</div> : <p className="history-empty">No payments recorded yet.</p>}
               </section>
             </div>
@@ -361,8 +363,8 @@ export default function ParticipantsPage({ role = 'SUPER_ADMIN', agentCode }: Pa
             {paymentOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPaymentOpen(false); }}>
               <form className="payment-dialog" onSubmit={(event) => { event.preventDefault(); paymentMutation.mutate(); }}>
                 <div className="payment-dialog-heading"><div><div className="section-kicker">{isAgent ? 'REQUEST PAYMENT · NEEDS APPROVAL' : 'RECORD PAYMENT'}</div><h2>{participant.name}</h2></div><button className="dots-button" aria-label="Close payment dialog" onClick={() => setPaymentOpen(false)} type="button">×</button></div>
-                <label>Draws to cover<select aria-label="Draws to cover" onChange={(event) => setPaymentCount(event.target.value)} value={paymentCount}>{unpaidScheduledDraws.map((_, index) => <option key={index} value={index + 1}>{index + 1} {index === 0 ? 'draw' : 'draws'} · {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(((index + 1) * (currentCampaign?.perDrawAmountPaise ?? 0)) / 100)}</option>)}</select></label>
-                <div className="payment-amount"><span>AMOUNT DUE</span><strong>{formattedPaymentAmount}</strong><small>{paymentCount} × {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((currentCampaign?.perDrawAmountPaise ?? 0) / 100)} per draw</small></div>
+                <label>Draws to cover<select aria-label="Draws to cover" onChange={(event) => setPaymentCount(event.target.value)} value={paymentCount}>{unpaidInstallments.map((_, index) => <option key={index} value={index + 1}>{index + 1} {index === 0 ? 'draw' : 'draws'} · {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(((index + 1) * (currentCampaign?.perDrawAmountPaise ?? 0)) / 100)}</option>)}</select></label>
+                <div className="payment-amount"><span>AMOUNT DUE</span><strong>{formattedPaymentAmount}</strong><small>{paymentCount} × {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((currentCampaign?.perDrawAmountPaise ?? 0) / 100)} per draw · covers {coveredDraws.length === 1 ? 'draw' : 'draws'} {coveredDraws.join(', ')}</small></div>
                 <label>Payment method<select onChange={(event) => setPaymentMethod(event.target.value as typeof paymentMethod)} value={paymentMethod}><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="BANK_TRANSFER">Bank transfer</option><option value="OTHER">Other</option></select></label>
                 <label>Payment date<input max={indiaDateValue()} onChange={(event) => setPaymentDate(event.target.value)} required type="date" value={paymentDate} /><small className="field-hint">The day the money was received, if it was collected earlier.</small></label>
                 <label>Reference note <span className="optional-label">OPTIONAL</span><input onChange={(event) => setPaymentReference(event.target.value)} value={paymentReference} /></label>

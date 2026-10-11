@@ -363,6 +363,29 @@ describe('participant serial numbers and address', () => {
     expect(screen.queryByRole('button', { name: 'Void' })).not.toBeInTheDocument();
   });
 
+  it('AC-PAY-4 / D2 lets a winner pay, settling a missed installment from a past draw first', async () => {
+    const draw = (drawNumber: number, status: 'COMPLETED' | 'SCHEDULED') => ({ drawNumber, scheduledAt: '2026-11-01T12:00:00.000Z', status });
+    const participant = {
+      ...created, participantNumber: 1005, status: 'WINNER' as const, agent: null, paymentTransactions: [],
+      winners: [{ id: 'w1', claimStatus: 'PENDING' as const, claimNote: null, claimUpdatedAt: null, prize: { name: 'Watch', rank: 1 }, draw: { drawNumber: 1 } }],
+      drawPayments: [
+        { id: 'dp1', status: 'PAID' as const, retainedCredit: false, draw: draw(1, 'COMPLETED') },
+        { id: 'dp2', status: 'NOT_PAID' as const, retainedCredit: false, draw: draw(2, 'COMPLETED') },
+        { id: 'dp3', status: 'NOT_PAID' as const, retainedCredit: false, draw: draw(3, 'SCHEDULED') },
+      ],
+    };
+    vi.mocked(listParticipants).mockResolvedValue({ participants: [participant], pagination: { page: 1, pageSize: 25, total: 1, pageCount: 1 } });
+    vi.mocked(getParticipant).mockResolvedValue(participant);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: 'View Riya Sharma' }));
+    await user.click(await screen.findByRole('button', { name: /Record payment/ }));
+
+    expect(screen.getByRole('combobox', { name: 'Draws to cover' }).querySelectorAll('option')).toHaveLength(2);
+    expect(screen.getByText(/covers draw 2$/)).toBeInTheDocument();
+  });
+
   it('AC-PAR-26 says when every serial number is in use', async () => {
     vi.mocked(getNextSerial).mockResolvedValue(null);
     await openAddForm();

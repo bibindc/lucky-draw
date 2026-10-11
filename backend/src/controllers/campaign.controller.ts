@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { getCampaignDashboard } from '../services/dashboard.service';
+import { drawEligibilityWhere } from '../services/eligibility';
 import { addUtcMonths, createCampaignSchema, updateDrawSchema } from '../validators/campaign.validator';
 
 function validationError(response: Response, issues: unknown) {
@@ -91,29 +92,23 @@ export async function getCampaignDraws(request: Request, response: Response) {
   const draws = await prisma.draw.findMany({
     where: { campaignId: campaign.id },
     orderBy: { drawNumber: 'asc' },
-    include: {
-      _count: {
-        select: {
-          drawPayments: {
-            where: {
-              status: 'PAID',
-              participant: { winners: { none: {} } },
-            },
-          },
-          winners: true,
-        },
-      },
-    },
+    include: { _count: { select: { winners: true } } },
   });
-  const prizeStocks = await Promise.all(draws.map((draw) => prisma.prize.aggregate({
-    where: { campaignId: campaign.id, drawId: draw.id },
-    _sum: { totalQuantity: true, assignedQuantity: true },
-  })));
+  const finalDrawNumber = draws.at(-1)?.drawNumber;
+  const [prizeStocks, eligibleCounts] = await Promise.all([
+    Promise.all(draws.map((draw) => prisma.prize.aggregate({
+      where: { campaignId: campaign.id, drawId: draw.id },
+      _sum: { totalQuantity: true, assignedQuantity: true },
+    }))),
+    // The eligible pool for each draw (D5), under the `drawPayments` count the screens already read.
+    Promise.all(draws.map((draw) => prisma.participant.count({ where: drawEligibilityWhere(draw, draw.drawNumber === finalDrawNumber) }))),
+  ]);
   return response.json({
     draws: draws.map((draw, index) => {
       const prizeStock = prizeStocks[index];
       return {
         ...draw,
+        _count: { ...draw._count, drawPayments: eligibleCounts[index] },
         availablePrizeCount: (prizeStock._sum.totalQuantity ?? 0) - (prizeStock._sum.assignedQuantity ?? 0),
       };
     }),

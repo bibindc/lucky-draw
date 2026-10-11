@@ -6,7 +6,7 @@ export type ParticipantPayment = {
   id: string;
   status: 'NOT_PAID' | 'PAID' | 'WAIVED';
   retainedCredit: boolean;
-  draw: { drawNumber: number; scheduledAt: string; status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED' };
+  draw: { drawNumber: number; scheduledAt: string; status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' };
 };
 
 export type Participant = {

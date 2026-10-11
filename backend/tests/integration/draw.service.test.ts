@@ -29,7 +29,7 @@ afterAll(async () => {
 /**
  * Draw 1 completed earlier (Esha won it). Draw 2 is due with prize count 2: Gold ×1 (rank 1), Silver ×2 (rank 2).
  * Draw 3 (the final draw) is in 48 hours with a Bicycle ×1.
- * Payments [draw1, draw2, draw3]: Asha, Bala, Chitra paid draw 2; Dev did not; Esha paid but already won.
+ * Payments [draw1, draw2, draw3]: Asha, Bala, Chitra paid draws 1 and 2; Dev paid nothing; Esha paid but already won.
  */
 async function seedCampaign(options: { draw2Payments?: 'none' } = {}) {
   const campaign = await prisma.campaign.create({
@@ -41,9 +41,9 @@ async function seedCampaign(options: { draw2Payments?: 'none' } = {}) {
 
   const paidDraw2 = options.draw2Payments === 'none' ? 'NOT_PAID' : 'PAID';
   const people: Record<string, string[]> = {
-    Asha: ['NOT_PAID', paidDraw2, 'PAID'],
-    Bala: ['NOT_PAID', paidDraw2, 'NOT_PAID'],
-    Chitra: ['NOT_PAID', paidDraw2, 'NOT_PAID'],
+    Asha: ['PAID', paidDraw2, 'PAID'],
+    Bala: ['PAID', paidDraw2, 'NOT_PAID'],
+    Chitra: ['PAID', paidDraw2, 'NOT_PAID'],
     Dev: ['NOT_PAID', 'NOT_PAID', 'NOT_PAID'],
     Esha: ['PAID', 'PAID', 'NOT_PAID'],
   };
@@ -131,8 +131,9 @@ describe('drawing rounds (live database)', () => {
     const prizes = await prisma.prize.findMany({ where: { id: { in: [gold.id, silver.id] } }, orderBy: { rank: 'asc' } });
     expect(prizes.map(({ assignedQuantity }) => assignedQuantity)).toEqual([1, 1]);
     const later = await prisma.drawPayment.findMany({ where: { drawId: draw3.id, participantId: { in: [ids.Asha, ids.Chitra] } } });
-    expect(later.find(({ participantId }) => participantId === ids.Chitra)).toMatchObject({ status: 'WAIVED' });
-    expect(later.find(({ participantId }) => participantId === ids.Asha)).toMatchObject({ status: 'PAID', retainedCredit: true });
+    // D2: winning waives nothing; a winner's later installments stay as they were, so they can still pay for the bumper.
+    expect(later.find(({ participantId }) => participantId === ids.Chitra)).toMatchObject({ status: 'NOT_PAID', retainedCredit: false });
+    expect(later.find(({ participantId }) => participantId === ids.Asha)).toMatchObject({ status: 'PAID', retainedCredit: false });
     expect((await prisma.participant.findUniqueOrThrow({ where: { id: ids.Asha } })).status).toBe('WINNER');
   });
 
@@ -252,5 +253,68 @@ describe('draw pool', () => {
       expect.objectContaining({ name: 'Gold coin', available: 1 }),
       expect.objectContaining({ name: 'Silver coin', available: 1 }),
     ]);
+  });
+});
+
+describe('installments and the bumper draw (live database)', () => {
+  const pool = async (drawId: string) => (await service.getDrawPool(drawId))?.participants.map(({ name }) => name);
+
+  it('D5 keeps a participant out until every earlier installment is paid, even after that draw was held', async () => {
+    const { campaign, draw2, ids } = await seedCampaign();
+    const payments = await import('../../src/services/payment.service');
+    const draw1 = await prisma.draw.findFirstOrThrow({ where: { campaignId: campaign.id, drawNumber: 1 } });
+    await prisma.drawPayment.update({ where: { participantId_drawId: { participantId: ids.Asha, drawId: draw1.id } }, data: { status: 'NOT_PAID' } });
+
+    // Asha paid draw 2 but missed draw 1.
+    expect(await pool(draw2.id)).toEqual(['Bala', 'Chitra']);
+
+    // A payment settles the missed installment first, although draw 1 is over (AC-PAY-4, AC-ADV-2).
+    const late = await payments.recordParticipantPayment(ids.Asha, adminId, { count: 1, method: 'CASH' });
+    expect(late.allocations.map(({ drawPayment }) => drawPayment.draw.drawNumber)).toEqual([1]);
+    expect(await pool(draw2.id)).toEqual(['Asha', 'Bala', 'Chitra']);
+    expect((await prisma.participant.findUniqueOrThrow({ where: { id: ids.Asha } })).status).toBe('ELIGIBLE');
+
+    // It never counted towards draw 1's pool, so it can still be voided (AC-PAY-5).
+    await payments.voidParticipantPayment(late.id);
+    expect(await pool(draw2.id)).toEqual(['Bala', 'Chitra']);
+  });
+
+  it('D2 lets a winner keep paying to enter only the final draw, and never win it twice', async () => {
+    const { campaign, draw2, draw3, ids, bicycle } = await seedCampaign();
+    const payments = await import('../../src/services/payment.service');
+    await prisma.prize.update({ where: { id: bicycle.id }, data: { totalQuantity: 2 } });
+
+    // Esha won draw 1 and paid draws 1 and 2: out of draw 2, and out of draw 3 until its installment is paid.
+    expect(await pool(draw2.id)).not.toContain('Esha');
+    expect(await pool(draw3.id)).toEqual(['Asha']);
+    await payments.recordParticipantPayment(ids.Esha, adminId, { count: 1, method: 'UPI' });
+    expect(await pool(draw3.id)).toEqual(['Asha', 'Esha']);
+    expect((await prisma.participant.findUniqueOrThrow({ where: { id: ids.Esha } })).status).toBe('WINNER');
+
+    const bumperTime = hoursFromNow(49);
+    await service.startDraw(draw3.id, adminId, { mode: 'AUTOMATIC' }, bumperTime);
+    const first = await service.drawRound(draw3.id, adminId, { round: 1, prizeId: bicycle.id }, bumperTime, pickIndex(1));
+    expect(first.winner.participant.name).toBe('Esha');
+    expect(await pool(draw3.id)).toEqual(['Asha']);
+    await service.drawRound(draw3.id, adminId, { round: 2, prizeId: bicycle.id }, bumperTime, pickIndex(0));
+
+    expect(await prisma.winner.count({ where: { participantId: ids.Esha } })).toBe(2);
+    const statuses = await prisma.participant.findMany({ where: { campaignId: campaign.id }, select: { name: true, status: true }, orderBy: { name: 'asc' } });
+    expect(statuses).toEqual([
+      { name: 'Asha', status: 'WINNER' }, { name: 'Bala', status: 'COMPLETED' }, { name: 'Chitra', status: 'COMPLETED' },
+      { name: 'Dev', status: 'COMPLETED' }, { name: 'Esha', status: 'WINNER' },
+    ]);
+  });
+
+  it('AC-PAY-6 moves Eligible participants to Payment pending when a draw completes and the next is unpaid', async () => {
+    const { draw2, ids, gold, silver } = await seedCampaign();
+    await prisma.participant.update({ where: { id: ids.Bala }, data: { status: 'ELIGIBLE' } });
+
+    await service.startDraw(draw2.id, adminId, { mode: 'AUTOMATIC' }, now);
+    await service.drawRound(draw2.id, adminId, { round: 1, prizeId: silver.id }, now, pickIndex(0));
+    await service.drawRound(draw2.id, adminId, { round: 2, prizeId: gold.id }, now, pickIndex(1));
+
+    // Bala did not win and has not paid draw 3.
+    expect((await prisma.participant.findUniqueOrThrow({ where: { id: ids.Bala } })).status).toBe('PAYMENT_PENDING');
   });
 });

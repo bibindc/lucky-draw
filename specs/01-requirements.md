@@ -2,10 +2,10 @@
 
 ## Decisions already made
 - D1. Payments are recorded manually by an admin (no online gateway).
-- D2. A participant who wins is excluded from all later draws, and their remaining draw payments are waived.
-- D3. If a participant paid for future draws before winning, those payments are NOT refunded. They are retained as non-refundable credit (see OQ-1).
+- D2. A participant who wins a draw is excluded from every other draw except the campaign's final draw, which holds the bumper prize. Winning waives nothing: a winner may keep paying installments and enters the final draw only after paying every installment of the campaign. So a participant can win at most one regular draw plus the bumper draw, and never the same draw twice. (Replaces "remaining payments are waived".)
+- D3. Payments are never refunded. Since winning no longer waives later installments (D2), payments made for later draws before winning simply stay `Paid` and count towards the bumper draw; there is no separate "retained credit" (OQ-1 no longer arises).
 - D4. The application is admin-only. Participants do not log in; "participant views" in the original stories are admin views of that participant.
-- D5. Eligibility for a draw = payment status for that draw is `Paid` AND participant has not won an earlier draw. (Replaces the earlier wording "paid OR won a previous draw", which contradicted the exclusion rule.)
+- D5. Eligibility for draw N = every installment from draw 1 up to and including draw N is `Paid`, AND the participant has not won a draw (for the final draw: has not already won the final draw itself, D2). A missed installment stays payable after its draw, and the participant is back in from the next draw once every missed installment is paid; e.g. someone who missed installment 3 and returns at draw 5 must pay 3, 4 and 5 before draw 5 to be in it. This applies equally to participants who joined after some draws were held: they pay from draw 1 (OQ-4).
 - D6. The application has `SUPER_ADMIN` and `AGENT` roles. Super admins manage agents and all campaign data. Agents can add and view only participants assigned to themselves; they cannot manage campaigns, draws, prizes, payments, or winners.
 - D7. Every participant has a serial number from 1000 to 9999, unique across all campaigns; no two participants ever hold the same number. When adding a participant the form suggests the next number in sequence (skipping numbers already taken), and super admins and agents may type a different unused number instead, e.g. to match a pre-printed card. Super admins can change a serial number later; agents cannot.
 - D8. Every agent has a generated, immutable unique agent ID (`AG-1000`, `AG-1001`, ...). Agents sign in with their email and password; the super admin sets the initial password when creating an agent.
@@ -76,43 +76,43 @@ As an admin, I want to record the ₹300 a participant pays for a draw, so that 
 - AC-PAY-1: Admin sees a participant's upcoming draws and each draw's payment status.
 - AC-PAY-2: Admin can record a ₹300 payment for one draw, with method (cash, UPI, bank transfer, other) and optional reference note.
 - AC-PAY-3: Recording a payment creates a payment transaction and sets that draw payment to `Paid`.
-- AC-PAY-4: A draw cannot be paid after it is `Completed`. A draw already `Paid` or `Waived` cannot be paid again.
-- AC-PAY-5: Admin can void a payment recorded in error while the draw is `Scheduled`; the draw returns to `Not Paid` and the transaction is kept with status `Voided`. The participant detail screen does not offer a Void action; voiding is available only through the API (`POST /payments/:transactionId/void`).
-- AC-PAY-6: A participant becomes `Eligible` once at least the next upcoming draw is `Paid`; `Payment Pending` otherwise.
+- AC-PAY-4: A draw's installment cannot be paid while that draw is `In progress`, or again once `Paid` (or `Waived`, legacy). A missed installment stays payable after its draw is `Completed`; paying it never puts the participant in that past draw, only restores eligibility for later draws (D5). Winners can be recorded payments (D2).
+- AC-PAY-5: Admin can void a payment recorded in error as long as no draw it covers has started since it was recorded (each covered draw is `Scheduled`, or was already held when the late payment was made); the draws return to `Not Paid` and the transaction is kept with status `Voided`. The participant detail screen does not offer a Void action; voiding is available only through the API (`POST /payments/:transactionId/void`).
+- AC-PAY-6: A participant who has not won is `Eligible` when every installment up to and including the next draw to be held is `Paid`, and `Payment Pending` otherwise. Statuses are updated after each payment or void and whenever a draw completes (so a participant eligible for a completed draw becomes `Payment Pending` if the following installment is unpaid). Winners stay `Winner`.
 - AC-PAY-7: Payment history lists every transaction (payment date, amount, draws covered, method, recorded by, status), latest payment date first. When a payment was entered on a later day than it was paid, the entry date is shown too.
 - AC-PAY-8: Recording or requesting a payment takes a payment date: the day the money was received, as an India date. It defaults to today and may be any earlier day (an agent may collect the money and enter it later), but not a future day (`VALIDATION_ERROR`). An agent's requested date is kept when the request is approved, and the super admin may correct it while approving. The date is stored separately from when the payment was entered, which existing payments take as their payment date. It appears in payment history, on the participant PDF and in pending payment requests.
 
 ## US-4 Record advance payment
 As an admin, I want to record payment for multiple future draws at once.
 
-- AC-ADV-1: Admin selects number of draws N (1 to remaining unpaid draws); amount is auto-calculated as N × per-draw amount (e.g. 2 → ₹600, 5 → ₹1,500, 10 → ₹3,000).
-- AC-ADV-2: Payment is allocated to the earliest unpaid `Scheduled` draws in order. Admin may instead pick specific draws.
+- AC-ADV-1: Admin selects number of installments N (1 to the unpaid installments, missed ones included); amount is auto-calculated as N × per-draw amount (e.g. 2 → ₹600, 5 → ₹1,500, 10 → ₹3,000).
+- AC-ADV-2: Payment is allocated to the earliest unpaid installments in draw order, so missed installments from completed draws are settled first (AC-PAY-4). The payment dialog shows which draws the payment covers. Admin may instead pick specific draws through the API.
 - AC-ADV-3: One transaction is created and linked to all covered draws; each becomes `Paid`.
 - AC-ADV-4: Admin can see which future draws are already paid.
-- AC-ADV-5: N cannot exceed the number of unpaid, upcoming draws.
+- AC-ADV-5: N cannot exceed the number of unpaid installments of draws that are not in progress.
 
-## US-5 Waive remaining payments after winning
-As an admin, I want a winner's remaining payments waived automatically.
+## US-5 Winners and the bumper draw
+As an admin, I want a winner to be able to keep paying for a chance at the bumper prize.
 
-- AC-WAV-1: When a participant wins any draw, every later draw payment that is `Not Paid` becomes `Waived` automatically, in the same transaction as the draw result.
-- AC-WAV-2: Later draw payments already `Paid` stay `Paid` and are flagged `Retained credit` (no refund, per D3). They are shown in the participant's history.
-- AC-WAV-3: A winner cannot be recorded new payments for later draws.
-- AC-WAV-4: Participant's remaining payment requirement shows ₹0 after a win.
+- AC-WAV-1 – AC-WAV-4: Superseded by D2. Winning no longer waives later installments or flags retained credit; existing `Waived` installments were reset to `Not Paid` and retained-credit flags cleared.
+- AC-BMP-1: A winner is never in the pool of any later draw other than the final draw, and can be recorded payments for any unpaid installment (AC-PAY-4).
+- AC-BMP-2: The final draw's pool includes winners of earlier draws who have paid every installment of the campaign (D5). A participant cannot win the final draw twice; a winner of an earlier draw may win it, giving them two wins.
+- AC-BMP-3: The Draws screen marks the final draw as the bumper draw.
 
 ## US-6 Conduct draw
 As an admin, I want to conduct each scheduled draw one prize at a time, using only eligible participants, so that every prize gets its own moment and its own winner.
 
 - AC-DRW-1: A draw can be started only on or after its scheduled date/time, only if `Scheduled`, and only once. The admin confirms before starting. Starting moves the draw to `In progress`.
-- AC-DRW-2: Eligible pool = participants with that draw `Paid` and no win (D5). The pool is evaluated again for every round, so a winner from an earlier round of the same draw is never in a later round.
+- AC-DRW-2: Eligible pool = participants with every installment up to and including that draw `Paid` and no win, except that earlier winners stay in the final draw's pool (D2, D5). The pool is evaluated again for every round, so a winner from an earlier round of the same draw is never in a later round.
 - AC-DRW-3: The draw has one round per winner. The number of rounds is fixed when the draw starts: min(configured prize count, eligible pool size, available prize units of this draw). The admin sees this number before confirming the start.
 - AC-DRW-4: If the number of rounds is 0 (nobody eligible, or no prize stock), starting completes the draw at once with zero winners and a warning; the admin is told before confirming.
 - AC-DRW-5: Before each round the admin chooses which prize is being drawn, from this draw's prizes that still have units. The screen suggests the lowest-ranked prize first (so the 1st prize is drawn last), and the admin can pick any available prize. The round's winner receives that prize and its available quantity drops by one.
-- AC-DRW-6: A previous winner (from an earlier draw or an earlier round) is never in a later pool.
+- AC-DRW-6: A previous winner (from an earlier draw or an earlier round) is never in a later pool, except the final draw's pool for winners of earlier draws (D2). A winner of an earlier round of the same draw is never in a later round's pool.
 - AC-DRW-7: Each round is saved the moment it is drawn and is immutable: round number, prize, winner, eligible pool snapshot at that round, time drawn, and the admin who drew it. The draw also keeps the pool snapshot at start, when it started and who started it, and when it completed.
 - AC-DRW-8: Each round is atomic and happens exactly once. A repeated or concurrent request for a round that has already been drawn is rejected with `ROUND_CONFLICT` and creates no second winner.
 - AC-DRW-9: A draw cannot be finished early. It becomes `Completed` automatically when its last round is drawn. The admin can leave an in-progress draw and continue it later; the draw list shows progress (e.g. "Round 3 of 5").
 - AC-DRW-10: While a draw is `In progress`, payments for it cannot be recorded or voided, its date/time and prize count cannot be edited, and its prizes cannot be added, moved away, deleted, or have name, rank or quantity changed (`DRAW_IN_PROGRESS`). Description and value can still be edited.
-- AC-DRW-11: A round's winner effects happen in the same transaction as the round: participant status `Winner`, later unpaid draws waived and later paid draws flagged retained credit (AC-WAV-1, AC-WAV-2). When the last round of the campaign's final draw completes, non-winners become `Completed` (AC-WIN-4).
+- AC-DRW-11: A round's winner effects happen in the same transaction as the round: participant status `Winner` and an undelivered complimentary choice cancelled; later installments are left as they are (D2). When a non-final draw completes, participant statuses are brought up to date for the next draw (AC-PAY-6). When the last round of the campaign's final draw completes, non-winners become `Completed` (AC-WIN-4).
 - AC-DRW-12: In an automatic round, after **Draw winner** the screen runs a lucky-draw spinner for at least 10 seconds: it cycles quickly through the serial numbers (with names) of the participants eligible for that round, slows down, and stops on the winner's serial before the winner is revealed. The spinner is presentation only: the server picks the winner with secure randomness when the round is requested, and the round is saved then (AC-DRW-7, AC-DRW-8), even if the screen is closed during the spin. The winner, round progress and winners list are not shown until the spinner stops, and the draw room cannot be closed while it spins. If the round fails (e.g. `ROUND_CONFLICT`), the spinner stops at once and the error is shown. Manual rounds have no spinner.
 
 ## US-11 Record a manual draw
@@ -130,7 +130,7 @@ As a super admin, when a draw is held manually (offline), I want to record each 
 - AC-WIN-2: Winner record stores participant, draw number, draw date, prize, winning status, and prize claim/delivery status (`Pending`, `Claimed`, `Delivered`).
 - AC-WIN-3: Admin can update claim/delivery status with a timestamp and note.
 - AC-WIN-4: A winning participant's status becomes `Winner`; after the final draw all participants who did not win become `Completed`.
-- AC-WIN-5: Winners are excluded from future draws (see AC-DRW-6).
+- AC-WIN-5: Winners are excluded from future draws except the final (bumper) draw (see AC-DRW-6, D2).
 - AC-WIN-6: From the Winners screen, a super admin can export the selected campaign's winners list as Excel (`.xlsx`) or PDF.
 - AC-WIN-7: The export contains every winner matching the filters currently applied (draw, claim status). With no filters it contains every winner in the campaign. Rows are ordered by draw number, then the order winners were drawn.
 - AC-WIN-8: Each row shows draw number, date the draw was held, draw mode (Automatic/Manual), position drawn, participant serial number, winner name, agent, email, mobile, prize name, prize rank, prize value, claim/delivery status, claim last updated, and claim note. Dates use Asia/Kolkata and amounts use INR (Excel stores prize value as a numeric rupee amount; blank when the prize has no value).
@@ -158,9 +158,9 @@ As a super admin, I want an overview of the selected campaign built from live da
 - AC-DSH-2: The progress banner shows the campaign name, duration and draw count, completed draws out of total (excluding cancelled draws from "remaining"), percentage complete, and the first draw date.
 - AC-DSH-3: Metric cards show, all computed by the server from stored records:
   - Participants: total, number added in the last 7 days, number of winners.
-  - Next draw eligibility: eligible count for the next scheduled draw (D5), that count as a percentage of participants who have not won, and the number still unpaid for that draw.
+  - Next draw eligibility: eligible count for the next scheduled draw (D5), that count as a percentage of the participants who could enter it (those who have not won, or everyone for the final draw), and how many of those still owe an installment up to that draw.
   - Prize inventory: available units, assigned units and number of prizes across draw-assigned prizes; legacy unassigned prizes are counted separately.
-  - Payments collected: total of `RECORDED` transactions (voided excluded), transaction count, amount still due for the next draw (unpaid non-winners × per-draw amount), and the share of payable draw payments that are paid.
+  - Payments collected: total of `RECORDED` transactions (voided excluded), transaction count, amount still due for the next draw (installments up to that draw still unpaid by the participants who could enter it × per-draw amount), and the share of payable installments that are paid (missed installments count as payable; winners' installments are optional and do not).
 - AC-DSH-4: Upcoming draws lists up to the next 3 `Scheduled` or `In progress` draws with draw number, date/time (Asia/Kolkata), prize count, eligible count, and a status: `In progress` (with round progress) for a started draw, `Ready` once the scheduled time has passed, otherwise `Today`, `Tomorrow` or `In N days`.
 - AC-DSH-5: A next-draw card shows the next scheduled draw's date, time, eligible count, prize count and days left, with a link to the Draws screen. When no draw is scheduled it says all draws are complete.
 - AC-DSH-6: Recent activity shows the 6 latest events across the campaign (participant added, payment recorded, payment voided, winner drawn, prize claim updated), newest first, with relative time and amount where relevant.
@@ -198,7 +198,7 @@ Specified in full in [`07-public-website.md`](07-public-website.md): a public we
 - OQ-1. What can the retained credit be used for (nothing, transfer to another campaign, transfer to another person)? Default in spec: recorded only, no further use.
 - OQ-2. ~~If prizes run out mid-draw, run with fewer winners or block the draw?~~ Resolved by D10: the number of rounds is fixed when the draw starts and prize stock is locked while it runs.
 - OQ-3. Is the 5-month duration enforced against draw dates, or informational only? Spec default: enforced.
-- OQ-4. Can an admin add participants after the campaign has started? Spec default: yes; earlier completed draws are marked `Not Paid` and not payable.
+- OQ-4. Can an admin add participants after the campaign has started? Resolved: yes; earlier completed draws are marked `Not Paid` and are payable, and the participant must pay from draw 1 to be eligible (D5).
 - OQ-6. Can a manual draw be recorded as held before its scheduled time (e.g. the event started early)? Spec default: no, held time must be at or after the scheduled time.
 - OQ-7. Should a recorded draw result (either mode) ever be correctable, e.g. a wrong winner entered for a manual draw? Spec default: no; results are immutable (Constitution principle 5). A correction process would need its own audited "void result" feature.
 - OQ-5. Single campaign at a time, or several? Spec default: model supports several, UI works on one selected campaign.

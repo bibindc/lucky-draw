@@ -23,7 +23,7 @@ Backend layers: routes → controllers (validation with Zod) → services (busin
 | PrizeImage | prizeId (unique, cascades with the prize), mimeType (image/jpeg, image/png, image/webp), data (bytes, ≤ 2 MB), size, updatedAt; one optional image per prize, stored in the database so backups include it |
 
 Image uploads (prize images and complimentary option images) share one image module: the file-signature check, the 2 MB limit and the raw-body reader live in one place.
-| Winner | id, drawId, participantId, prizeId, drawPosition (round number), drawnAt, recordedByAdminId?, poolSnapshot (JSON, eligible pool for that round), claimStatus (PENDING/CLAIMED/DELIVERED), claimNote?, claimUpdatedAt, createdAt; unique(participantId) per campaign |
+| Winner | id, drawId, participantId, prizeId, drawPosition (round number), drawnAt, recordedByAdminId?, poolSnapshot (JSON, eligible pool for that round), claimStatus (PENDING/CLAIMED/DELIVERED), claimNote?, claimUpdatedAt, createdAt; unique(drawId, participantId): one regular win plus possibly the final (bumper) draw per participant (D2) |
 
 Rule enforcement notes:
 - A participant wins at most once: unique constraint on Winner per participant.
